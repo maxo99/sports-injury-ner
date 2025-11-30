@@ -1,3 +1,4 @@
+import argparse
 import os
 from typing import Any
 
@@ -106,12 +107,30 @@ def tokenize_and_align_labels(
 def main():
     logger.info("Starting training pipeline...")
 
+    parser = argparse.ArgumentParser(description="Train Sports Injury NER Model")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run data loading and model init but skip actual training.",
+    )
+    args_cli = parser.parse_args()
+
     # ============================================================================
     # 2. LOAD DATASET
     # ============================================================================
+    # Determine validation file
+    if settings.GOLD_STANDARD.exists():
+        logger.info(f"Using gold standard for validation: {settings.GOLD_STANDARD}")
+        validation_file = str(settings.GOLD_STANDARD)
+    else:
+        logger.warning(
+            f"Gold standard not found at {settings.GOLD_STANDARD}. Falling back to {settings.OUTPUT_DEV}"
+        )
+        validation_file = str(settings.OUTPUT_DEV)
+
     data_files = {
         "train": str(settings.OUTPUT_TRAIN),
-        "validation": str(settings.OUTPUT_DEV),
+        "validation": validation_file,
     }
 
     # Check if files exist
@@ -174,8 +193,12 @@ def main():
     # 5. RUN
     # ============================================================================
     logger.info("Starting training...")
-    # trainer.train()  # Uncomment to actually run training
-    logger.info("Training setup complete. Ready to run (uncomment trainer.train()).")
+    if args_cli.dry_run:
+        logger.info("Dry run enabled. Skipping actual training loop.")
+        return
+
+    trainer.train()
+    logger.info("Training complete.")
 
 
 if __name__ == "__main__":

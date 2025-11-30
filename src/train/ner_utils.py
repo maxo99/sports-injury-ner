@@ -72,15 +72,27 @@ def align_tokens_and_labels(
     # Tokenize with offsets
     tokenized = tokenizer(
         text,
+        truncation=True,
+        max_length=512,
+        return_special_tokens_mask=True,
+        is_split_into_words=False,  # We are providing a single string
+    )
+
+    tokens = tokenizer.convert_ids_to_tokens(tokenized["input_ids"])
+    word_ids = tokenized.word_ids()
+
+    # Create character-to-token mapping
+    # We need to know which token corresponds to which character span
+    # word_ids gives us the word index, but we need character offsets for the *original* string
+    # Re-running with return_offsets_mapping to get character spans
+    tokenized_with_offsets = tokenizer(
+        text,
         return_offsets_mapping=True,
         truncation=True,
         max_length=512,
         return_special_tokens_mask=True,
     )
-
-    tokens = tokenizer.convert_ids_to_tokens(tokenized["input_ids"])
-    offsets = tokenized["offset_mapping"]
-    special_tokens_mask = tokenized["special_tokens_mask"]
+    offsets = tokenized_with_offsets["offset_mapping"]
 
     ner_tags = ["O"] * len(tokens)
 
@@ -88,47 +100,42 @@ def align_tokens_and_labels(
     entities = sorted(entities, key=lambda x: x["start"])
 
     for idx, (start, end) in enumerate(offsets):
-        # Skip special tokens ([CLS], [SEP], etc.)
-        if special_tokens_mask[idx]:
+        # Skip special tokens
+        if word_ids[idx] is None:
             continue
 
-        # If start == end, it's usually a special token or empty, skip
+        # Skip 0-length tokens
         if start == end:
             continue
 
-        # Check if this token falls within any entity
+        # Check overlap with entities
         for ent in entities:
-            # We consider a token to be part of an entity if it starts within the entity boundaries
-            # or if the entity covers the token.
-            # Strict alignment: Token start must be >= Entity start AND Token end <= Entity end?
-            # Or loose: Token overlaps?
-            # BERT tokenization usually aligns well if we use the same text.
+            ent_start, ent_end = ent["start"], ent["end"]
+            ent_label = ent["label"]
 
-            # Logic:
-            # If token start matches entity start -> B-TAG
-            # If token is inside entity -> I-TAG
+            # Strict alignment: Token must be substantially inside the entity
+            # Or: if the token *starts* inside the entity, we tag it.
 
-            if start >= ent["start"] and end <= ent["end"]:
-                if start == ent["start"]:
-                    ner_tags[idx] = f"B-{ent['label']}"
-                else:
-                    ner_tags[idx] = f"I-{ent['label']}"
+            # Case 1: Token starts exactly at entity start -> B-TAG
+            if start == ent_start:
+                ner_tags[idx] = f"B-{ent_label}"
                 break
-            elif start < ent["start"] and end > ent["start"]:
-                # Token overlaps start of entity (rare with word boundaries, but possible)
-                # e.g. "unbelievable" -> "un", "believ", "able"
-                # If entity is "believable", "un" is outside.
-                pass
 
-    # Filter out special tokens
+            # Case 2: Token is inside entity -> I-TAG
+            elif start > ent_start and start < ent_end:
+                ner_tags[idx] = f"I-{ent_label}"
+                break
+
+    # Filter out special tokens to match original behavior
     final_tokens = []
     final_tags = []
 
-    for idx, (start, end) in enumerate(offsets):
-        if special_tokens_mask[idx]:
+    for idx, token in enumerate(tokens):
+        # word_ids[idx] is None for special tokens like [CLS], [SEP]
+        if word_ids[idx] is None:
             continue
 
-        final_tokens.append(tokens[idx])
+        final_tokens.append(token)
         final_tags.append(ner_tags[idx])
 
     return final_tokens, final_tags
