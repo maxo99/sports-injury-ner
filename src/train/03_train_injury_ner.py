@@ -1,3 +1,6 @@
+import os
+from typing import Any
+
 import evaluate
 import numpy as np
 from datasets import load_dataset
@@ -9,13 +12,13 @@ from transformers import (
     TrainingArguments,
 )
 
-# ============================================================================
-# 1. CONFIGURATION (The "Scalable" Setup)
-# ============================================================================
-# We use SportsBERT because for a specialized task (injuries), starting with
-# a model that knows the domain language is the robust, scalable choice.
-MODEL_CHECKPOINT = "microsoft/SportsBERT"
+from config import settings, setup_logging
 
+logger = setup_logging(__name__)
+
+# ============================================================================
+# 1. CONFIGURATION
+# ============================================================================
 # Define your custom label list.
 # "BIO" (Beginning, Inside, Outside) format is standard for NER.
 LABEL_LIST = [
@@ -26,45 +29,46 @@ LABEL_LIST = [
     "I-INJURY",
     "B-STATUS",
     "I-STATUS",
+    "B-TEAM",
+    "I-TEAM",
 ]
 
 # Create mappings for the model
 id2label = dict(enumerate(LABEL_LIST))
 label2id = {label: i for i, label in enumerate(LABEL_LIST)}
 
-# ============================================================================
-# 2. LOAD DATASET
-# ============================================================================
-data_files = {
-    "train": "../data/train.jsonl",
-    "validation": "../data/dev.jsonl",  # Or "../data/gold_standard.jsonl" if ready
-}
 
-# Check if files exist
-import os
+def compute_metrics(p) -> dict[str, float]:
+    """
+    Computes metrics for the trainer.
+    """
+    predictions, labels = p
+    predictions = np.argmax(predictions, axis=2)
 
-if not os.path.exists(data_files["train"]):
-    raise FileNotFoundError(
-        f"Training data not found at {data_files['train']}. Run convert_csv_to_ner_data.py first."
-    )
+    # Remove ignored index (special tokens)
+    true_predictions = [
+        [LABEL_LIST[p] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+    true_labels = [
+        [LABEL_LIST[l] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
 
-# Load JSONL data
-# The 'datasets' library handles JSONL natively
-dataset = load_dataset("json", data_files=data_files)
+    seqeval = evaluate.load("seqeval")
+    results = seqeval.compute(predictions=true_predictions, references=true_labels)
 
-# If no validation set found, split the training set
-if "validation" not in dataset:
-    print("No validation file found. Splitting training data...")
-    dataset = dataset["train"].train_test_split(test_size=0.2)
-
-
-# ============================================================================
-# 3. TOKENIZATION & ALIGNMENT (The "Hard Part")
-# ============================================================================
-tokenizer = AutoTokenizer.from_pretrained(MODEL_CHECKPOINT)
+    return {
+        "precision": results["overall_precision"],
+        "recall": results["overall_recall"],
+        "f1": results["overall_f1"],
+        "accuracy": results["overall_accuracy"],
+    }
 
 
-def tokenize_and_align_labels(examples):
+def tokenize_and_align_labels(
+    examples: dict[str, Any], tokenizer: Any
+) -> dict[str, Any]:
     """
     This function handles the mismatch between words and sub-tokens.
     Example: "Mayfield" might become ["May", "##field"].
@@ -85,7 +89,9 @@ def tokenize_and_align_labels(examples):
                 label_ids.append(-100)
             # If it's the start of a new word, use the label map
             elif word_idx != previous_word_idx:
-                label_ids.append(label2id[label[word_idx]])
+                # Handle potential unknown labels gracefully
+                lab = label[word_idx]
+                label_ids.append(label2id.get(lab, 0))  # Default to O if unknown
             # If it's a sub-token of the same word, we usually ignore it (-100)
             # or repeat the label. Ignoring is standard BERT practice.
             else:
@@ -97,75 +103,80 @@ def tokenize_and_align_labels(examples):
     return tokenized_inputs
 
 
-tokenized_datasets = dataset.map(tokenize_and_align_labels, batched=True)
+def main():
+    logger.info("Starting training pipeline...")
 
-
-# ============================================================================
-# 4. METRICS (The "Right Evaluation")
-# ============================================================================
-# We use seqeval, the standard for NER. It calculates F1 score per entity type.
-seqeval = evaluate.load("seqeval")
-
-
-def compute_metrics(p):
-    predictions, labels = p
-    predictions = np.argmax(predictions, axis=2)
-
-    # Remove ignored index (special tokens)
-    true_predictions = [
-        [LABEL_LIST[p] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, labels)
-    ]
-    true_labels = [
-        [LABEL_LIST[l] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, labels)
-    ]
-
-    results = seqeval.compute(predictions=true_predictions, references=true_labels)
-    return {
-        "precision": results["overall_precision"],
-        "recall": results["overall_recall"],
-        "f1": results["overall_f1"],
-        "accuracy": results["overall_accuracy"],
+    # ============================================================================
+    # 2. LOAD DATASET
+    # ============================================================================
+    data_files = {
+        "train": str(settings.OUTPUT_TRAIN),
+        "validation": str(settings.OUTPUT_DEV),
     }
 
+    # Check if files exist
+    if not os.path.exists(data_files["train"]):
+        raise FileNotFoundError(
+            f"Training data not found at {data_files['train']}. Run convert_csv_to_ner_data.py first."
+        )
 
-# ============================================================================
-# 5. TRAINING SETUP
-# ============================================================================
-model = AutoModelForTokenClassification.from_pretrained(
-    MODEL_CHECKPOINT,
-    num_labels=len(LABEL_LIST),
-    id2label=id2label,
-    label2id=label2id,
-)
+    # Load JSONL data
+    dataset = load_dataset("json", data_files=data_files)
+    logger.info(f"Loaded dataset: {dataset}")
 
-args = TrainingArguments(
-    "sports-injury-ner-model",
-    evaluation_strategy="epoch",  # Evaluate every epoch
-    learning_rate=2e-5,  # Standard BERT learning rate
-    per_device_train_batch_size=16,
-    num_train_epochs=3,
-    weight_decay=0.01,
-    push_to_hub=False,
-    logging_steps=1,  # Log often for this demo
-)
+    # ============================================================================
+    # 3. TOKENIZATION & ALIGNMENT
+    # ============================================================================
+    logger.info(f"Loading tokenizer for {settings.TRAIN_BASE_MODEL}...")
+    tokenizer = AutoTokenizer.from_pretrained(settings.TRAIN_BASE_MODEL)
 
-data_collator = DataCollatorForTokenClassification(tokenizer)
+    tokenized_datasets = dataset.map(
+        lambda x: tokenize_and_align_labels(x, tokenizer), batched=True
+    )
 
-trainer = Trainer(
-    model=model,
-    args=args,
-    train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets["test"],
-    data_collator=data_collator,
-    compute_metrics=compute_metrics,
-    tokenizer=tokenizer,
-)
+    # ============================================================================
+    # 4. TRAINING SETUP
+    # ============================================================================
+    logger.info("Initializing model...")
+    model = AutoModelForTokenClassification.from_pretrained(
+        settings.TRAIN_BASE_MODEL,
+        num_labels=len(LABEL_LIST),
+        id2label=id2label,
+        label2id=label2id,
+    )
 
-# ============================================================================
-# 6. RUN
-# ============================================================================
-print("Starting training...")
-# trainer.train()  # Uncomment to actually run training
-print("Training setup complete. Ready to run.")
+    args = TrainingArguments(
+        output_dir="sports-injury-ner-model",
+        eval_strategy="epoch",
+        learning_rate=2e-5,
+        per_device_train_batch_size=16,
+        num_train_epochs=3,
+        weight_decay=0.01,
+        push_to_hub=False,
+        logging_steps=10,
+        report_to="mlflow",  # Enable MLflow tracking
+        run_name="sports-injury-ner-v1",  # Name for the run in MLflow
+    )
+
+    data_collator = DataCollatorForTokenClassification(tokenizer)
+
+    trainer = Trainer(
+        model=model,
+        args=args,
+        train_dataset=tokenized_datasets["train"],
+        eval_dataset=tokenized_datasets["validation"],
+        data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+    )
+
+    # ============================================================================
+    # 5. RUN
+    # ============================================================================
+    logger.info("Starting training...")
+    # trainer.train()  # Uncomment to actually run training
+    logger.info("Training setup complete. Ready to run (uncomment trainer.train()).")
+
+
+if __name__ == "__main__":
+    main()

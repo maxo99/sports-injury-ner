@@ -39,6 +39,11 @@ Fine-tune a BERT model to extract `PLAYER`, `INJURY`, `STATUS`, and `TEAM` from 
 * `hybrid_injury_extraction.py`: Prototype of the hybrid NER + Rules approach.
 * `guide_finetune_injury_ner.py`: Documentation on the fine-tuning process.
 
+## Known Limitations
+
+*   **Entity Resolution Priority**: The data generation script resolves overlapping entities using a strict priority: `Metadata > Keywords > BERT NER`. This means if a keyword (e.g., "ACL") overlaps with a BERT-detected entity, the keyword "wins". This simplistic approach may not handle complex nested entities correctly.
+*   **Data Sources**: The current scraper (`00_load_injuries_data.py`) relies on specific HTML structures of ESPN/NFL sites and may break if those sites change.
+
 ## Next Steps for Future Agents
 
 1. **Data Collection**: Gather a dataset of 500+ injury reports and annotate them with custom tags (`B-INJURY`, `I-STATUS`, etc.) to enable true fine-tuning.

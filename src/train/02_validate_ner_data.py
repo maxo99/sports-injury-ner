@@ -1,8 +1,9 @@
 import json
-from pathlib import Path
+from typing import Any
 
-INPUT_FILE = "../data/dev.jsonl"
-OUTPUT_FILE = "../data/gold_standard.jsonl"
+from config import settings, setup_logging
+
+logger = setup_logging(__name__)
 
 TAG_MAP = {
     "0": "O",
@@ -17,22 +18,22 @@ TAG_MAP = {
 }
 
 
-def load_data(filename):
+def load_data(filename: Any) -> list[dict[str, Any]]:
     data = []
-    if Path(filename).exists():
+    if filename.exists():
         with open(filename, encoding="utf-8") as f:
             for line in f:
                 data.append(json.loads(line))
     return data
 
 
-def save_data(data, filename):
+def save_data(data: list[dict[str, Any]], filename: Any):
     with open(filename, "w", encoding="utf-8") as f:
         for item in data:
             f.write(json.dumps(item) + "\n")
 
 
-def print_example(tokens, tags):
+def print_example(tokens: list[str], tags: list[str]):
     print("\n" + "=" * 50)
     print(f"{'TOKEN':<20} {'TAG':<15}")
     print("-" * 35)
@@ -41,7 +42,7 @@ def print_example(tokens, tags):
     print("=" * 50)
 
 
-def validate_example(example):
+def validate_example(example: dict[str, Any]) -> dict[str, Any] | str | None:
     tokens = example["tokens"]
     tags = example["ner_tags"]
 
@@ -135,18 +136,20 @@ def validate_example(example):
 
 
 def main():
-    print(f"Loading {INPUT_FILE}...")
-    data = load_data(INPUT_FILE)
+    logger.info(f"Loading {settings.OUTPUT_DEV}...")
+    data = load_data(settings.OUTPUT_DEV)
 
     if not data:
-        print(f"No data found in {INPUT_FILE}. Run convert_csv_to_ner_data.py first.")
+        logger.error(
+            f"No data found in {settings.OUTPUT_DEV}. Run convert_csv_to_ner_data.py first."
+        )
         return
 
     gold_data = []
-    if Path(OUTPUT_FILE).exists():
-        print(f"Loading existing gold data from {OUTPUT_FILE}...")
-        gold_data = load_data(OUTPUT_FILE)
-        print(f"Loaded {len(gold_data)} existing gold examples.")
+    if settings.GOLD_STANDARD.exists():
+        logger.info(f"Loading existing gold data from {settings.GOLD_STANDARD}...")
+        gold_data = load_data(settings.GOLD_STANDARD)
+        logger.info(f"Loaded {len(gold_data)} existing gold examples.")
 
     # Filter out examples already in gold set (simple check by text content)
     existing_texts = {" ".join(item["tokens"]) for item in gold_data}
@@ -163,10 +166,10 @@ def main():
         elif result:
             gold_data.append(result)
             # Auto-save after each valid entry
-            save_data(gold_data, OUTPUT_FILE)
+            save_data(gold_data, settings.GOLD_STANDARD)
 
-    print(f"\nSession ended. Total gold examples: {len(gold_data)}")
-    print(f"Saved to {OUTPUT_FILE}")
+    logger.info(f"Session ended. Total gold examples: {len(gold_data)}")
+    logger.info(f"Saved to {settings.GOLD_STANDARD}")
 
 
 if __name__ == "__main__":

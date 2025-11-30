@@ -1,242 +1,195 @@
 import csv
 import json
 import random
+from typing import Any, List, Dict
 
-from pathlib import Path
+from transformers import pipeline, AutoTokenizer
 
+from config import settings, setup_logging
 from constants import INJURY_KEYWORDS, ORG_BLACKLIST, STATUS_KEYWORDS
-from ner_utils import find_sublist, tag_keywords, tokenize
-from transformers import pipeline
+from ner_utils import find_keyword_offsets, align_tokens_and_labels
 
-# Configuration
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-
-INPUT_CSV = DATA_DIR / "injuries_espn.csv"
-INPUT_JSON = DATA_DIR / "feed.json"
-OUTPUT_TRAIN = DATA_DIR / "train.jsonl"
-OUTPUT_DEV = DATA_DIR / "dev.jsonl"
-SPLIT_RATIO = 0.8  # 80% train, 20% dev
+logger = setup_logging(__name__)
 
 # Initialize NER pipeline (only once)
-print("Loading NER model (dslim/bert-large-NER)...")
+logger.info(f"Loading NER model ({settings.DATA_GEN_MODEL})...")
 ner_pipeline = pipeline(
-    "ner", model="dslim/bert-large-NER", aggregation_strategy="simple"
+    "ner", model=settings.DATA_GEN_MODEL, aggregation_strategy="simple"
 )  # type : ignore
 
+# Initialize Tokenizer (for alignment)
+logger.info(f"Loading Tokenizer ({settings.TRAIN_BASE_MODEL})...")
+tokenizer = AutoTokenizer.from_pretrained(settings.TRAIN_BASE_MODEL)
 
-def apply_ner_model(text, tokens, ner_tags):
+
+def get_bert_ner_entities(text: str) -> List[Dict[str, Any]]:
     """
-    Runs the pre-trained NER model on the text and maps the results to our tokens.
-    Updates ner_tags in place.
+    Runs the pre-trained NER model and returns entities with offsets.
+    Maps PER -> PLAYER, ORG -> TEAM (if not blacklisted).
     """
     results = ner_pipeline(text)
-    tokens_lower = [t.lower() for t in tokens]
+    entities = []
 
     for entity in results:
         word = entity["word"].strip()
         entity_group = entity["entity_group"]
+        start = entity["start"]
+        end = entity["end"]
 
-        # Map BERT labels to our labels
+        label = None
         if entity_group == "PER":
-            tag_type = "PLAYER"
+            label = "PLAYER"
         elif entity_group == "ORG":
-            # Check blacklist
             if word in ORG_BLACKLIST:
                 continue
-            tag_type = "TEAM"
-        else:
-            continue  # Skip LOC, MISC for now
+            label = "TEAM"
 
-        # Find this word in our tokens
-        # Note: This is a fuzzy match because tokenizers differ.
-        # We search for the entity text in our token list.
-        entity_tokens = tokenize(word)
-        entity_tokens_lower = [t.lower() for t in entity_tokens]
+        if label:
+            entities.append(
+                {"start": start, "end": end, "label": label, "text": text[start:end]}
+            )
 
-        start_idx = find_sublist(entity_tokens_lower, tokens_lower)
-
-        if start_idx != -1:
-            # Only tag if currently "O" (don't overwrite existing tags yet,
-            # though usually this runs first so it sets the baseline)
-            if ner_tags[start_idx] == "O":
-                ner_tags[start_idx] = f"B-{tag_type}"
-                for i in range(1, len(entity_tokens)):
-                    if start_idx + i < len(ner_tags) and ner_tags[start_idx + i] == "O":
-                        ner_tags[start_idx + i] = f"I-{tag_type}"
-
-    return ner_tags
+    return entities
 
 
-def process_csv():
-    print(f"Reading {INPUT_CSV}...")
+def process_text(
+    text: str, meta_entities: List[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Process a single text string:
+    1. Find BERT NER entities
+    2. Find Keyword entities (Injury, Status)
+    3. Merge with provided meta_entities (Player, Team from metadata)
+    4. Resolve overlaps
+    5. Tokenize and align
+    """
+    if meta_entities is None:
+        meta_entities = []
 
+    # 1. BERT NER
+    bert_entities = get_bert_ner_entities(text)
+
+    # 2. Keywords
+    injury_entities = find_keyword_offsets(text, INJURY_KEYWORDS, "INJURY")
+    status_entities = find_keyword_offsets(text, STATUS_KEYWORDS, "STATUS")
+
+    # 3. Combine all entities
+    # Priority: Metadata > Keywords > BERT NER
+    # We want to keep Metadata entities (Ground Truth) and Keywords (Specific Domain)
+    # over generic BERT NER if they overlap.
+
+    all_entities = meta_entities + injury_entities + status_entities + bert_entities
+
+    # 4. Resolve Overlaps
+    # We resolve overlaps by iterating through the prioritized list (Metadata > Keywords > BERT).
+    # The first entity to claim a character span "wins".
+    final_entities = []
+    occupied = set()
+
+    for ent in all_entities:
+        start, end = ent["start"], ent["end"]
+        is_overlap = False
+        for i in range(start, end):
+            if i in occupied:
+                is_overlap = True
+                break
+
+        if not is_overlap:
+            final_entities.append(ent)
+            for i in range(start, end):
+                occupied.add(i)
+
+    # 5. Tokenize and Align
+    tokens, ner_tags = align_tokens_and_labels(text, tokenizer, final_entities)
+
+    return {"tokens": tokens, "ner_tags": ner_tags}
+
+
+def process_csv() -> List[Dict[str, Any]]:
+    logger.info(f"Reading {settings.INPUT_CSV}...")
     data = []
 
-    if not Path(INPUT_CSV).exists():
-        print(f"Warning: {INPUT_CSV} not found.")
+    if not settings.INPUT_CSV.exists():
+        logger.warning(f"{settings.INPUT_CSV} not found.")
         return data
 
-    with open(INPUT_CSV, encoding="utf-8") as f:
+    with open(settings.INPUT_CSV, encoding="utf-8") as f:
         reader = csv.DictReader(f)
-
         for row in reader:
             comment = row.get("Comment", "").strip()
             name = row.get("Name", "").strip()
             status = row.get("Status", "").strip()
 
-            # Skip rows without comments or names
             if not comment or not name:
                 continue
 
-            # 1. Tokenize the text
-            tokens = tokenize(comment)
-            tokens_lower = [t.lower() for t in tokens]
+            # Find metadata entities in text
+            meta_entities = []
 
-            # 2. Initialize tags as "O" (Outside)
-            ner_tags = ["O"] * len(tokens)
+            # Player Name
+            # We use find_keyword_offsets to find the name in the text
+            name_ents = find_keyword_offsets(comment, [name], "PLAYER")
+            if not name_ents and " " in name:
+                # Try last name
+                last_name = name.split()[-1]
+                name_ents = find_keyword_offsets(comment, [last_name], "PLAYER")
+            meta_entities.extend(name_ents)
 
-            # 3. Apply Pre-trained NER Model (Baseline)
-            ner_tags = apply_ner_model(comment, tokens, ner_tags)
-
-            # 4. Tag the Player Name (Overwrite NER if needed, as this is ground truth)
-            # Try full name first
-            name_tokens = tokenize(name)
-            name_tokens_lower = [t.lower() for t in name_tokens]
-            start_idx = find_sublist(name_tokens_lower, tokens_lower)
-
-            # If full name not found, try last name only (if name has multiple parts)
-            if start_idx == -1 and len(name_tokens) > 1:
-                last_name_tokens = [name_tokens_lower[-1]]
-                start_idx = find_sublist(last_name_tokens, tokens_lower)
-
-            if start_idx != -1:
-                # Determine length of match (was it full name or last name?)
-                match_len = (
-                    len(name_tokens)
-                    if find_sublist(name_tokens_lower, tokens_lower) != -1
-                    else 1
-                )
-
-                ner_tags[start_idx] = "B-PLAYER"
-                for i in range(1, match_len):
-                    if start_idx + i < len(ner_tags):
-                        ner_tags[start_idx + i] = "I-PLAYER"
-
-            # 5. Tag the Status (if present in text)
+            # Status from column
             if status:
-                status_tokens = tokenize(status)
-                status_tokens_lower = [t.lower() for t in status_tokens]
-                start_idx = find_sublist(status_tokens_lower, tokens_lower)
+                status_ents = find_keyword_offsets(comment, [status], "STATUS")
+                meta_entities.extend(status_ents)
 
-                if start_idx != -1:
-                    ner_tags[start_idx] = "B-STATUS"
-                    for i in range(1, len(status_tokens)):
-                        if start_idx + i < len(ner_tags):
-                            ner_tags[start_idx + i] = "I-STATUS"
+            result = process_text(comment, meta_entities)
+            result["meta"] = {"player": name, "status": status, "source": "csv"}
+            data.append(result)
 
-            # 6. Tag Injury Keywords (Expanded Logic)
-            ner_tags = tag_keywords(
-                tokens, ner_tags, INJURY_KEYWORDS, tag_type="INJURY"
-            )
-
-            # 7. Add to dataset
-            data.append(
-                {
-                    "tokens": tokens,
-                    "ner_tags": ner_tags,
-                    "meta": {"player": name, "status": status, "source": "csv"},
-                }
-            )
-
-    print(f"Processed {len(data)} valid examples from CSV.")
+    logger.info(f"Processed {len(data)} valid examples from CSV.")
     return data
 
 
-def process_json():
-    print(f"Reading {INPUT_JSON}...")
-
+def process_json() -> List[Dict[str, Any]]:
+    logger.info(f"Reading {settings.INPUT_JSON}...")
     data = []
 
-    if not Path(INPUT_JSON).exists():
-        print(f"Warning: {INPUT_JSON} not found.")
+    if not settings.INPUT_JSON.exists():
+        logger.warning(f"{settings.INPUT_JSON} not found.")
         return data
 
-    with open(INPUT_JSON, encoding="utf-8") as f:
+    with open(settings.INPUT_JSON, encoding="utf-8") as f:
         try:
             feed_items = json.load(f)
         except json.JSONDecodeError:
-            print(f"Error decoding {INPUT_JSON}")
+            logger.error(f"Error decoding {settings.INPUT_JSON}")
             return data
 
     for item in feed_items:
-        # Use summary as the main text
         text = item.get("summary", "").strip()
         if not text:
             continue
 
-        # 1. Tokenize
-        tokens = tokenize(text)
-        tokens_lower = [t.lower() for t in tokens]
-        ner_tags = ["O"] * len(tokens)
+        meta_entities = []
 
-        # 2. Apply Pre-trained NER Model (Baseline)
-        ner_tags = apply_ner_model(text, tokens, ner_tags)
+        # Players
+        for player in item.get("players", []):
+            if player:
+                meta_entities.extend(find_keyword_offsets(text, [player], "PLAYER"))
 
-        # 3. Tag Players (if available in the 'players' list)
-        players = item.get("players", [])
-        for player_name in players:
-            if not player_name:
-                continue
+        # Teams
+        for team in item.get("teams", []):
+            if team and team not in ORG_BLACKLIST:
+                meta_entities.extend(find_keyword_offsets(text, [team], "TEAM"))
 
-            p_tokens = tokenize(player_name)
-            p_tokens_lower = [t.lower() for t in p_tokens]
-            start_idx = find_sublist(p_tokens_lower, tokens_lower)
+        result = process_text(text, meta_entities)
+        result["meta"] = {"source": "json", "feed_id": item.get("feed_id")}
+        data.append(result)
 
-            if start_idx != -1:
-                ner_tags[start_idx] = "B-PLAYER"
-                for i in range(1, len(p_tokens)):
-                    if start_idx + i < len(ner_tags):
-                        ner_tags[start_idx + i] = "I-PLAYER"
-
-        # 4. Tag Teams (if available)
-        teams = item.get("teams", [])
-        for team in teams:
-            if not team or team in ORG_BLACKLIST:
-                continue
-
-            # Teams might be abbreviations (CLE) or full names.
-            # This simple check looks for exact matches of what's in the list.
-            t_tokens = tokenize(team)
-            t_tokens_lower = [t.lower() for t in t_tokens]
-            start_idx = find_sublist(t_tokens_lower, tokens_lower)
-
-            if start_idx != -1:
-                ner_tags[start_idx] = "B-TEAM"
-                for i in range(1, len(t_tokens)):
-                    if start_idx + i < len(ner_tags):
-                        ner_tags[start_idx + i] = "I-TEAM"
-
-        # 5. Tag Status Keywords (New)
-        ner_tags = tag_keywords(tokens, ner_tags, STATUS_KEYWORDS, tag_type="STATUS")
-
-        # 6. Tag Injury Keywords (Expanded Logic)
-        ner_tags = tag_keywords(tokens, ner_tags, INJURY_KEYWORDS, tag_type="INJURY")
-
-        data.append(
-            {
-                "tokens": tokens,
-                "ner_tags": ner_tags,
-                "meta": {"source": "json", "feed_id": item.get("feed_id")},
-            }
-        )
-
-    print(f"Processed {len(data)} valid examples from JSON.")
+    logger.info(f"Processed {len(data)} valid examples from JSON.")
     return data
 
 
-def save_jsonl(data, filename):
-    print(f"Saving {len(data)} examples to {filename}...")
+def save_jsonl(data: List[Dict[str, Any]], filename: Any):
+    logger.info(f"Saving {len(data)} examples to {filename}...")
     with open(filename, "w", encoding="utf-8") as f:
         for item in data:
             f.write(json.dumps(item) + "\n")
@@ -254,26 +207,26 @@ def main():
     random.shuffle(all_data)
 
     # 3. Split
-    split_idx = int(len(all_data) * SPLIT_RATIO)
+    split_idx = int(len(all_data) * settings.SPLIT_RATIO)
     train_data = all_data[:split_idx]
     dev_data = all_data[split_idx:]
 
     # 4. Save
-    save_jsonl(train_data, OUTPUT_TRAIN)
-    save_jsonl(dev_data, OUTPUT_DEV)
+    save_jsonl(train_data, settings.OUTPUT_TRAIN)
+    save_jsonl(dev_data, settings.OUTPUT_DEV)
 
     # 5. Show a sample
-    print("\nSample Output:")
+    logger.info("Sample Output:")
     if train_data:
         sample = train_data[0]
-        print("Source:", sample["meta"].get("source"))
-        print("Tokens:", sample["tokens"])
-        print("Tags:  ", sample["ner_tags"])
+        logger.info(f"Source: {sample['meta'].get('source')}")
+        logger.info(f"Tokens: {sample['tokens']}")
+        logger.info(f"Tags:   {sample['ner_tags']}")
 
         # Visual check
-        print("\nVisual Check:")
+        logger.info("Visual Check:")
         for t, tag in zip(sample["tokens"], sample["ner_tags"]):
-            print(f"{t:15} {tag}")
+            logger.info(f"{t:15} {tag}")
 
 
 if __name__ == "__main__":

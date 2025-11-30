@@ -1,72 +1,134 @@
 import re
+from typing import Any
+
+from config import setup_logging
+
+logger = setup_logging(__name__)
 
 
-def tokenize(text):
+def find_keyword_offsets(
+    text: str, keywords: list[str], label: str
+) -> list[dict[str, Any]]:
     """
-    Simple tokenizer that splits on whitespace and punctuation.
-    Returns a list of tokens.
+    Finds all non-overlapping occurrences of keywords in text and returns their character offsets.
+    Prioritizes longer keywords.
     """
-    # This regex splits on whitespace but keeps punctuation as separate tokens
-    return re.findall(r"[\w']+|[.,!?;]", text)
+    entities = []
+    text_lower = text.lower()
+
+    # Sort keywords by length (descending) to prioritize longer phrases
+    # e.g. match "high ankle sprain" before "ankle"
+    sorted_keywords = sorted(keywords, key=len, reverse=True)
+
+    # Keep track of occupied character indices to prevent overlaps
+    occupied = set()
+
+    for kw in sorted_keywords:
+        if not kw:
+            continue
+
+        kw_lower = kw.lower()
+        # Use word boundaries to avoid partial matches (e.g. "ache" in "headache")
+        # Escape the keyword to handle special characters safely
+        pattern = r"\b" + re.escape(kw_lower) + r"\b"
+
+        try:
+            for match in re.finditer(pattern, text_lower):
+                start, end = match.span()
+
+                # Check if this range overlaps with any existing match
+                is_overlap = False
+                for i in range(start, end):
+                    if i in occupied:
+                        is_overlap = True
+                        break
+
+                if not is_overlap:
+                    entities.append(
+                        {
+                            "start": start,
+                            "end": end,
+                            "label": label,
+                            "text": text[start:end],
+                        }
+                    )
+                    # Mark range as occupied
+                    for i in range(start, end):
+                        occupied.add(i)
+        except re.error:
+            logger.warning(f"Invalid regex pattern for keyword: {kw}")
+            continue
+
+    return entities
 
 
-def find_sublist(sublist, main_list):
+def align_tokens_and_labels(
+    text: str, tokenizer: Any, entities: list[dict[str, Any]]
+) -> tuple[list[str], list[str]]:
     """
-    Finds the start index of a sublist within a main list.
-    Returns -1 if not found.
+    Tokenizes text using the provided tokenizer and aligns character-based entities to tokens.
+    Returns (tokens, ner_tags).
     """
-    if not sublist:
-        return -1
-    n = len(sublist)
-    for i in range(len(main_list) - n + 1):
-        if main_list[i : i + n] == sublist:
-            return i
-    return -1
+    # Tokenize with offsets
+    tokenized = tokenizer(
+        text,
+        return_offsets_mapping=True,
+        truncation=True,
+        max_length=512,
+        return_special_tokens_mask=True,
+    )
 
+    tokens = tokenizer.convert_ids_to_tokens(tokenized["input_ids"])
+    offsets = tokenized["offset_mapping"]
+    special_tokens_mask = tokenized["special_tokens_mask"]
 
-def tag_keywords(tokens, ner_tags, keywords, tag_type="INJURY"):
-    """
-    Tags tokens with B-{tag_type}/I-{tag_type} based on a list of keywords/phrases.
-    Prioritizes longer phrases to avoid partial matches (e.g. tagging 'ankle' in 'high ankle sprain').
-    """
-    tokens_lower = [t.lower() for t in tokens]
+    ner_tags = ["O"] * len(tokens)
 
-    # Sort keywords by length (number of words) descending
-    # This ensures "high ankle sprain" is matched before "ankle"
-    sorted_keywords = sorted(keywords, key=lambda x: len(x.split()), reverse=True)
+    # Sort entities by start position
+    entities = sorted(entities, key=lambda x: x["start"])
 
-    for keyword in sorted_keywords:
-        kw_tokens = tokenize(keyword)
-        kw_tokens_lower = [t.lower() for t in kw_tokens]
+    for idx, (start, end) in enumerate(offsets):
+        # Skip special tokens ([CLS], [SEP], etc.)
+        if special_tokens_mask[idx]:
+            continue
 
-        # We need to find ALL occurrences, not just the first one
-        # So we loop through the text
-        search_start_index = 0
-        while True:
-            # Find match starting from search_start_index
-            # We have to slice the list, which changes indices, so we add search_start_index back
-            sub_tokens = tokens_lower[search_start_index:]
-            match_relative_idx = find_sublist(kw_tokens_lower, sub_tokens)
+        # If start == end, it's usually a special token or empty, skip
+        if start == end:
+            continue
 
-            if match_relative_idx == -1:
+        # Check if this token falls within any entity
+        for ent in entities:
+            # We consider a token to be part of an entity if it starts within the entity boundaries
+            # or if the entity covers the token.
+            # Strict alignment: Token start must be >= Entity start AND Token end <= Entity end?
+            # Or loose: Token overlaps?
+            # BERT tokenization usually aligns well if we use the same text.
+
+            # Logic:
+            # If token start matches entity start -> B-TAG
+            # If token is inside entity -> I-TAG
+
+            if start >= ent["start"] and end <= ent["end"]:
+                if start == ent["start"]:
+                    ner_tags[idx] = f"B-{ent['label']}"
+                else:
+                    ner_tags[idx] = f"I-{ent['label']}"
                 break
+            elif start < ent["start"] and end > ent["start"]:
+                # Token overlaps start of entity (rare with word boundaries, but possible)
+                # e.g. "unbelievable" -> "un", "believ", "able"
+                # If entity is "believable", "un" is outside.
+                pass
 
-            match_abs_idx = search_start_index + match_relative_idx
+    # Filter out special tokens
+    final_tokens = []
+    final_tags = []
 
-            # Check if any token in this range is already tagged
-            is_overlap = False
-            for i in range(len(kw_tokens)):
-                if ner_tags[match_abs_idx + i] != "O":
-                    is_overlap = True
-                    break
+    for idx, (start, end) in enumerate(offsets):
+        if special_tokens_mask[idx]:
+            continue
 
-            # Only tag if completely free (no overlap with Player/Status or other Injury)
-            if not is_overlap:
-                ner_tags[match_abs_idx] = f"B-{tag_type}"
-                for i in range(1, len(kw_tokens)):
-                    ner_tags[match_abs_idx + i] = f"I-{tag_type}"
+        final_tokens.append(tokens[idx])
+        final_tags.append(ner_tags[idx])
 
-            # Advance search
-            search_start_index = match_abs_idx + 1
-
-    return ner_tags
+    return final_tokens, final_tags
