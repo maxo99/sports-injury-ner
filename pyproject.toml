@@ -1,0 +1,145 @@
+[project]
+name = "sports-injury-ner"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.30.0",
+    "bs4>=0.0.2",
+    "dotenv>=0.9.9",
+    "evaluate>=0.4.6",
+    "fastapi>=0.118.0",
+    "fastapi-pagination>=0.14.2",
+    "feedparser>=6.0.12",
+    "gitpython>=3.1.45",
+    "ipywidgets>=8.1.8",
+    # "nfl-data-py==0.3.3",
+    "label-studio>=1.21.0",
+    "nflreadpy>=0.1.5",
+    "opentelemetry-exporter-otlp>=1.38.0",
+    "opentelemetry-instrumentation-fastapi>=0.59b0",
+    "opentelemetry-sdk>=1.38.0",
+    "pandas>=1.5.3",
+    "prometheus-fastapi-instrumentator>=7.1.0",
+    "psycopg2-binary>=2.9.10",
+    "seqeval>=1.2.2",
+    "sqlmodel>=0.0.25",
+    "torch>=2.9.1",
+    "transformers>=4.57.3",
+    "uvicorn[standard]>=0.37.0",
+]
+
+# [dependency-groups]
+# [dev = [
+#    "ipykernel>=6.30.1",
+#  ]]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # Pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114", # missing-module-docstring
+    "C0115", # missing-class-docstring
+    "C0116", # missing-function-docstring
+    "R0903", # too-few-public-methods
+    "R0913", # too-many-arguments
+    "R0914", # too-many-locals
+    "W1203", # logging-format-interpolation
+    "W0718", # exception-escape
+    "W0511", # TODOs
+    "B905", # 
+]
+
+[tool.pylint.basic]
+good-names = [
+    "i",
+    "j",
+    "k",
+    "ex",
+    "Run",
+    "_",
+    "x",
+    "y",
+    "z",
+    "id",
+    "db",
+    "pk",
+    "ok",
+]
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["test"]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::DeprecationWarning:pandas.*",
+    "ignore:np.find_common_type is deprecated:DeprecationWarning",
+    "ignore::DeprecationWarning:testcontainers.*"
+]
+
+
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["__init__.py:__version__"]
+branch = "master"
+upload_to_pypi = false
+upload_to_release = true
+build_command = "pip install uv && uv build"
+tag_format = "v{version}"
+major_on_zero = false
+allow_zero_version = true
+upload_to_vcs_release = true
+
+
+[tool.semantic_release.branches.other]
+match = ".*"
+# prerelease_token = "rc"
+# prerelease = true
+
+
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test",
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
