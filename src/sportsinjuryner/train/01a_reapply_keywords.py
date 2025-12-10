@@ -1,8 +1,14 @@
 import json
 from pathlib import Path
 
-from constants import INJURY_KEYWORDS, ORG_BLACKLIST, STATUS_KEYWORDS
-from ner_utils import tag_keywords
+from train.constants import (
+    INJURY_KEYWORDS,
+    ORG_BLACKLIST,
+    REPORTER_BLACKLIST,
+    STATUS_KEYWORDS,
+    TEAM_WHITELIST,
+)
+from train.ner_utils import tag_keywords
 
 # Configuration
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -51,12 +57,21 @@ def reapply_keywords(data):
                 token_word = tokens[i]
                 if any(token_word in bl_item for bl_item in ORG_BLACKLIST):
                     ner_tags[i] = "O"
+            elif "PLAYER" in tag:
+                # Check if the underlying token is in the reporter blacklist
+                token_word = tokens[i].lower()
+                # Simple check for single tokens or parts of names
+                if any(token_word in bl_item.split() for bl_item in REPORTER_BLACKLIST):
+                    ner_tags[i] = "O"
 
         # 2. Re-apply Status Keywords
         ner_tags = tag_keywords(tokens, ner_tags, STATUS_KEYWORDS, tag_type="STATUS")
 
         # 3. Re-apply Injury Keywords
         ner_tags = tag_keywords(tokens, ner_tags, INJURY_KEYWORDS, tag_type="INJURY")
+
+        # 4. Re-apply Team Whitelist
+        ner_tags = tag_keywords(tokens, ner_tags, TEAM_WHITELIST, tag_type="TEAM")
 
         item["ner_tags"] = ner_tags
         updated_count += 1

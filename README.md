@@ -1,51 +1,62 @@
-# Project Goal: Custom Sports Injury NER
+---
+language:
+- en
+license: mit
+base_model: microsoft/SportsBERT
+tags:
+- ner
+- sports
+- injury
+- token-classification
+model-index:
+- name: sports-injury-ner
+  results: []
+---
 
-## Objective
+# Sports Injury NER
 
-Fine-tune a BERT model to extract `PLAYER`, `INJURY`, `STATUS`, and `TEAM` from sports news.
+This is a fine-tuned Named Entity Recognition (NER) model for extracting sports injury information from news text.
 
-## Workflow
+## Model Description
 
-1. **Generate Data** (`train/convert_csv_to_ner_data.py`)
-    * Combines CSV (`injuries_espn.csv`) and JSON (`feed.json`) data.
-    * Uses `dslim/bert-large-NER` for initial Player/Team detection.
-    * Uses keyword matching for Injury and Status.
-    * Outputs `data/train.jsonl` and `data/dev.jsonl`.
+The goal of this project is to fine-tune [microsoft/SportsBERT](https://huggingface.co/microsoft/SportsBERT) to extract `PLAYER`, `INJURY`, `STATUS`, and `TEAM` from sports news using a Weak Supervision approach.
 
-2. **Validate Data** (`train/validate_ner_data.py`)
-    * Manual review of auto-generated tags to create a "Gold Standard".
-    * Run: `uv run python train/validate_ner_data.py`
+## Intended Use
 
-3. **Train Model** (`train/train_injury_ner.py`)
-    * Fine-tunes `microsoft/SportsBERT` on the generated data.
-    * Evaluates using `seqeval` (Precision, Recall, F1).
-    * Run: `uv run python train/train_injury_ner.py`
+The model is designed to extract the following entities from sports news:
+- `PLAYER`: Name of the injured player.
+- `INJURY`: Type of injury (e.g., "hamstring", "concussion").
+- `STATUS`: Injury status (e.g., "questionable", "out", "IR").
+- `TEAM`: Team name (e.g., "Packers", "New York Giants").
 
-## Current Status
+## Usage
 
-* [x] Data generation script complete (CSV + JSON + Pre-trained NER + Keywords).
-* [x] Validation script complete (with shortcuts).
-* [x] Training script complete (loads real data).
-* [ ] Run full training loop.
+```python
+from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
-### 2. Extraction Strategies
+model_id = "maxo99/sports-injury-ner"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForTokenClassification.from_pretrained(model_id)
 
-* **LLM Analysis**: Explored `sport-injury-gemma2b-it-qlora` for QA-style extraction, but found the model artifact suspicious (46MB size).
+nlp = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
 
-## Key Files
+text = "Packers QB Aaron Rodgers is questionable with a toe injury."
+results = nlp(text)
+print(results)
+```
 
-* `main.py`: Main entry point for testing NER models.
-* `train_injury_ner.py`: Reference implementation for fine-tuning SportsBERT (Gold Standard workflow).
-* `hybrid_injury_extraction.py`: Prototype of the hybrid NER + Rules approach.
-* `guide_finetune_injury_ner.py`: Documentation on the fine-tuning process.
+## Training Data
 
-## Known Limitations
+The model was fine-tuned using a Weak Supervision approach:
+1.  **Data Generation**: Silver labels generated using `bert-large-NER` (for Player/Team) and keyword matching (for Injury/Status).
+2.  **Fine-tuning**: `microsoft/SportsBERT` fine-tuned on the silver data.
 
-*   **Entity Resolution Priority**: The data generation script resolves overlapping entities using a strict priority: `Metadata > Keywords > BERT NER`. This means if a keyword (e.g., "ACL") overlaps with a BERT-detected entity, the keyword "wins". This simplistic approach may not handle complex nested entities correctly.
-*   **Data Sources**: The current scraper (`00_load_injuries_data.py`) relies on specific HTML structures of ESPN/NFL sites and may break if those sites change.
+## Limitations
 
-## Next Steps for Future Agents
+*   **Entity Resolution Priority**: The data generation script resolves overlapping entities using a strict priority: `Metadata > Keywords > BERT NER`.
+*   **Domain Specificity**: The model is trained on a specific dataset of NFL/ESPN reports and may not generalize well to other sports or writing styles.
+*   **Silver Labels**: It relies on "silver" labels, so it may inherit errors from the initial heuristic labeling process.
 
-1. **Data Collection**: Gather a dataset of 500+ injury reports and annotate them with custom tags (`B-INJURY`, `I-STATUS`, etc.) to enable true fine-tuning.
-2. **Pipeline Implementation**: Finalize the `hybrid_injury_extraction.py` script to process the live feed and output structured JSON.
-3. **Evaluation**: Establish a "Golden Set" of manually verified injury reports to benchmark the accuracy of different extraction methods.
+## Development
+
+For instructions on how to reproduce the training pipeline, run tests, or contribute, please see [docs/development.md](docs/development.md).

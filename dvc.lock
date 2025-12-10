@@ -1,0 +1,71 @@
+schema: '2.0'
+stages:
+  generate_data:
+    cmd: uv run python src/train/01_convert_csv_to_ner_data.py
+    deps:
+    - path: src/data/injuries_espn.csv
+      hash: md5
+      md5: 0eeb2f950a3aecbc034f7c8617726b13
+      size: 63326
+    - path: src/train/01_convert_csv_to_ner_data.py
+      hash: md5
+      md5: ef97e05a0cfaa4a34870b1c77c02dc75
+      size: 7750
+    outs:
+    - path: src/data/dev.jsonl
+      hash: md5
+      md5: bf9f77de7560f425e551029aa7bcf5c6
+      size: 15855
+    - path: src/data/train.jsonl
+      hash: md5
+      md5: aa5a3f9690f2ef362ea3a7f020bf1fd8
+      size: 174196
+  train_model:
+    cmd: uv run python src/train/03_train_injury_ner.py
+    deps:
+    - path: src/data/train.jsonl
+      hash: md5
+      md5: aa5a3f9690f2ef362ea3a7f020bf1fd8
+      size: 174196
+    - path: src/train/03_train_injury_ner.py
+      hash: md5
+      md5: 6043233c6b73c66e961ed9f56ab2bc11
+      size: 9927
+    outs:
+    - path: sports-injury-ner-model
+      hash: md5
+      md5: 100cdcbbb977232173ab0f8654d04a04.dir
+      size: 1491000505
+      nfiles: 18
+  load_data:
+    cmd: uv run python src/train/00_load_injuries_data.py
+    deps:
+    - path: src/train/00_load_injuries_data.py
+      hash: md5
+      md5: 5734c884f1076508345cd515382fdadd
+      size: 3284
+    outs:
+    - path: src/data/injuries_espn.csv
+      hash: md5
+      md5: 0eeb2f950a3aecbc034f7c8617726b13
+      size: 63326
+    - path: src/data/injuries_nfl.csv
+      hash: md5
+      md5: de3ea0a254ea6cb62d56f1dc859c14ae
+      size: 15094
+  validate_data:
+    cmd: uv run python src/train/02_validate_ner_data.py
+    deps:
+    - path: src/data/dev.jsonl
+      hash: md5
+      md5: f0f3e2a4e46dfa149d77261b50a88ef1
+      size: 42787
+    - path: src/train/02_validate_ner_data.py
+      hash: md5
+      md5: de393a75e37f8f6354610957d18e350a
+      size: 5981
+    outs:
+    - path: src/data/gold_standard.jsonl
+      hash: md5
+      md5: d41d8cd98f00b204e9800998ecf8427e
+      size: 0

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     INPUT_JSON: Path = DATA_DIR / "feed.json"
     OUTPUT_TRAIN: Path = DATA_DIR / "train.jsonl"
     OUTPUT_DEV: Path = DATA_DIR / "dev.jsonl"
+    OUTPUT_TEST: Path = DATA_DIR / "test.jsonl"
     GOLD_STANDARD: Path = DATA_DIR / "gold_standard.jsonl"
 
     # Model Config
@@ -28,6 +29,10 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    # Hugging Face
+    HF_API_KEY: str | None = None
+    HF_REPO_NAME: str = "maxo99/sports-injury-ner"
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

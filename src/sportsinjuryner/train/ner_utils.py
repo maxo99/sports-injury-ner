@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from config import setup_logging
+from sportsinjuryner.config import setup_logging
 
 logger = setup_logging(__name__)
 
@@ -139,3 +139,55 @@ def align_tokens_and_labels(
         final_tags.append(ner_tags[idx])
 
     return final_tokens, final_tags
+
+
+def tag_keywords(
+    tokens: list[str], tags: list[str], keywords: list[str], tag_type: str
+) -> list[str]:
+    """
+    Applies keyword-based tagging to a list of tokens.
+    Reconstructs text from tokens to handle multi-token keywords and subwords.
+    """
+    # 1. Build text and map characters to token indices
+    text = ""
+    char_to_token_idx = []
+
+    for i, token in enumerate(tokens):
+        if token.startswith("##"):
+            clean_token = token[2:]
+        else:
+            if text:
+                text += " "
+                char_to_token_idx.append(None)  # Space
+            clean_token = token
+
+        text += clean_token
+        char_to_token_idx.extend([i] * len(clean_token))
+
+    # 2. Find keywords using the existing offset finder
+    entities = find_keyword_offsets(text, keywords, tag_type)
+
+    # 3. Apply tags
+    for ent in entities:
+        start, end = ent["start"], ent["end"]
+
+        # Find all token indices covered by this entity
+        covered_indices = set()
+        for i in range(start, end):
+            if i < len(char_to_token_idx):
+                idx = char_to_token_idx[i]
+                if idx is not None:
+                    covered_indices.add(idx)
+
+        sorted_indices = sorted(list(covered_indices))
+
+        if not sorted_indices:
+            continue
+
+        # Apply B- tag to first token, I- to rest
+        # Note: We overwrite existing tags. The caller should handle clearing if needed.
+        tags[sorted_indices[0]] = f"B-{tag_type}"
+        for idx in sorted_indices[1:]:
+            tags[idx] = f"I-{tag_type}"
+
+    return tags

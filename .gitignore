@@ -11,3 +11,10 @@ wheels/
 .env
 data/
 workspaces/
+/sports-injury-ner-model
+
+!*.dvc
+mlruns
+mlflow.db
+src/data/
+reports/

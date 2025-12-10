@@ -3,8 +3,13 @@ import os
 from typing import Any
 
 import evaluate
+import matplotlib.pyplot as plt
+import mlflow
 import numpy as np
+import seaborn as sns
 from datasets import load_dataset
+from huggingface_hub import login
+from sklearn.metrics import confusion_matrix
 from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
@@ -13,7 +18,7 @@ from transformers import (
     TrainingArguments,
 )
 
-from config import settings, setup_logging
+from sportsinjuryner.config import settings, setup_logging
 
 logger = setup_logging(__name__)
 
@@ -48,16 +53,26 @@ def compute_metrics(p) -> dict[str, float]:
 
     # Remove ignored index (special tokens)
     true_predictions = [
-        [LABEL_LIST[p] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, labels)
+        [
+            LABEL_LIST[p]
+            for (p, label_id) in zip(prediction, label, strict=False)
+            if label_id != -100
+        ]
+        for prediction, label in zip(predictions, labels, strict=False)
     ]
     true_labels = [
-        [LABEL_LIST[l] for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, labels)
+        [
+            LABEL_LIST[label_id]
+            for (p, label_id) in zip(prediction, label, strict=False)
+            if label_id != -100
+        ]
+        for prediction, label in zip(predictions, labels, strict=False)
     ]
 
     seqeval = evaluate.load("seqeval")
     results = seqeval.compute(predictions=true_predictions, references=true_labels)
+    if results is None:
+        return {}
 
     return {
         "precision": results["overall_precision"],
@@ -116,6 +131,19 @@ def main():
     args_cli = parser.parse_args()
 
     # ============================================================================
+    # 0. MLFLOW & HF SETUP
+    # ============================================================================
+    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+
+    if settings.HF_API_KEY:
+        logger.info("Logging in to Hugging Face Hub...")
+        login(token=settings.HF_API_KEY)
+    else:
+        logger.warning(
+            "HF_API_KEY not found. Model upload might fail if not logged in."
+        )
+
+    # ============================================================================
     # 2. LOAD DATASET
     # ============================================================================
     # Determine validation file
@@ -171,11 +199,13 @@ def main():
         per_device_train_batch_size=16,
         num_train_epochs=3,
         weight_decay=0.01,
-        push_to_hub=False,
+        push_to_hub=True,
+        hub_model_id=settings.HF_REPO_NAME,
+        hub_private_repo=False,
         logging_steps=10,
         report_to="mlflow",  # Enable MLflow tracking
         run_name="sports-injury-ner-v1",  # Name for the run in MLflow
-    )
+    ) # type: ignore
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
 
@@ -199,6 +229,73 @@ def main():
 
     trainer.train()
     logger.info("Training complete.")
+
+    # ============================================================================
+    # 6. EVALUATION & ARTIFACTS
+    # ============================================================================
+    logger.info("Evaluating on validation set for artifacts...")
+    predictions, labels, metrics = trainer.predict(tokenized_datasets["validation"])
+    predictions = np.argmax(predictions, axis=2)
+
+    # Flatten predictions and labels, ignoring -100
+    true_predictions = []
+    true_labels = []
+    for prediction, label in zip(predictions, labels, strict=False):
+        for p, label_id in zip(prediction, label, strict=False):
+            if label_id != -100:
+                true_predictions.append(LABEL_LIST[p])
+                true_labels.append(LABEL_LIST[label_id])
+
+    # Generate Confusion Matrix
+    cm = confusion_matrix(true_labels, true_predictions, labels=LABEL_LIST)
+
+    # Plot
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=LABEL_LIST,
+        yticklabels=LABEL_LIST,
+    )
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
+    plt.title("Confusion Matrix")
+
+    # Save to reports directory (Git tracked)
+    reports_dir = "reports"
+    os.makedirs(reports_dir, exist_ok=True)
+
+    cm_path = os.path.join(reports_dir, "confusion_matrix.png")
+    plt.savefig(cm_path)
+    logger.info(f"Saved confusion matrix to {cm_path}")
+
+    # Save metrics to JSON
+    import json
+
+    metrics_path = os.path.join(reports_dir, "metrics.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+    logger.info(f"Saved metrics to {metrics_path}")
+
+    # Log to MLflow
+    # Trainer usually closes the run at the end of train().
+    # We try to get the active run or the last one.
+    run = mlflow.active_run()
+    if not run:
+        run = mlflow.last_active_run()
+
+    if run:
+        # We need to resume the run to log artifacts if it was closed
+        with mlflow.start_run(run_id=run.info.run_id):
+            mlflow.log_artifact(cm_path)
+            mlflow.log_artifact(metrics_path)
+            logger.info(f"Logged artifacts to MLflow run {run.info.run_id}")
+    else:
+        logger.warning(
+            "No active or recent MLflow run found. Skipping artifact logging."
+        )
 
 
 if __name__ == "__main__":

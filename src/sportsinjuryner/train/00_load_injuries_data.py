@@ -1,8 +1,13 @@
+import argparse
+import asyncio
+import json
+
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-from config import settings, setup_logging
+from sportsinjuryner.config import settings, setup_logging
+from sportsinjuryner.loaders.feedsreader import collect_feeddatas
 
 logger = setup_logging(__name__)
 
@@ -62,57 +67,57 @@ def get_injuries_espn():
     output_path = settings.INPUT_CSV
     df.to_csv(output_path, index=False)
     logger.info(f"Saved to {output_path}")
+    return df
 
 
-def get_injuries_nfl():
-    INJURIES_URL = "https://www.nfl.com/injuries/"
-    logger.info(f"Fetching NFL injuries from {INJURIES_URL}")
-
+def get_rss_feed():
+    logger.info("Fetching RSS feeds...")
     try:
-        response = requests.get(INJURIES_URL, headers=headers)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        logger.error(f"Failed to fetch NFL data: {e}")
-        return
+        feed_data = asyncio.run(collect_feeddatas())
 
-    soup = BeautifulSoup(response.content, "html.parser")
+        # Convert to list of dicts for JSON serialization
+        data_to_save = [item.model_dump() for item in feed_data]
 
-    tables = soup.find_all("table")
+        output_path = settings.INPUT_JSON
+        with open(output_path, "w") as f:
+            json.dump(data_to_save, f, indent=2, default=str)
 
-    if not tables:
-        logger.warning("No tables found on NFL.com page.")
-        return
-
-    data = []
-    for table in tables:
-        tbody = table.find("tbody")
-        if not tbody:
-            continue
-
-        rows = tbody.find_all("tr")
-        for row in rows:
-            cells = row.find_all("td")
-            row_data = [cell.get_text(strip=True) for cell in cells]
-            if row_data:
-                data.append(row_data)
-
-    # Create DataFrame and save to CSV
-    columns = ["Player", "Position", "Injuries", "Practice Status", "Game Status"]
-    df = pd.DataFrame(data, columns=columns)
-
-    logger.info(f"Extracted {len(df)} rows from NFL.com")
-    if not df.empty:
-        logger.debug(f"Sample data:\n{df.head()}")
-
-    # Note: We might want to save this to a different file or merge,
-    # but keeping original logic for now.
-    output_path = settings.DATA_DIR / "injuries_nfl.csv"
-    df.to_csv(output_path, index=False)
-    logger.info(f"Saved to {output_path}")
+        logger.info(f"Saved {len(data_to_save)} RSS entries to {output_path}")
+    except Exception as e:
+        logger.error(f"Failed to fetch RSS data: {e}")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Load injury data from various sources."
+    )
+    parser.add_argument(
+        "--espn",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Fetch ESPN data",
+    )
+    parser.add_argument(
+        "--nfl",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Fetch NFL data",
+    )
+    parser.add_argument(
+        "--rss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Fetch RSS feeds",
+    )
+
+    args = parser.parse_args()
+
     logger.info("Starting injury data collection...")
-    get_injuries_espn()
-    get_injuries_nfl()
+
+    if args.espn:
+        get_injuries_espn()
+
+    if args.rss:
+        get_rss_feed()
+
     logger.info("Data collection complete.")

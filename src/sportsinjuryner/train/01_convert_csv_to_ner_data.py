@@ -1,13 +1,13 @@
 import csv
 import json
-import random
-from typing import Any, List, Dict
+import zlib
+from typing import Any
 
-from transformers import pipeline, AutoTokenizer
+from transformers import AutoTokenizer, pipeline
 
-from config import settings, setup_logging
-from constants import INJURY_KEYWORDS, ORG_BLACKLIST, STATUS_KEYWORDS
-from ner_utils import find_keyword_offsets, align_tokens_and_labels
+from sportsinjuryner.config import settings, setup_logging
+from train.constants import INJURY_KEYWORDS, ORG_BLACKLIST, STATUS_KEYWORDS
+from train.ner_utils import align_tokens_and_labels, find_keyword_offsets
 
 logger = setup_logging(__name__)
 
@@ -22,7 +22,7 @@ logger.info(f"Loading Tokenizer ({settings.TRAIN_BASE_MODEL})...")
 tokenizer = AutoTokenizer.from_pretrained(settings.TRAIN_BASE_MODEL)
 
 
-def get_bert_ner_entities(text: str) -> List[Dict[str, Any]]:
+def get_bert_ner_entities(text: str) -> list[dict[str, Any]]:
     """
     Runs the pre-trained NER model and returns entities with offsets.
     Maps PER -> PLAYER, ORG -> TEAM (if not blacklisted).
@@ -53,8 +53,8 @@ def get_bert_ner_entities(text: str) -> List[Dict[str, Any]]:
 
 
 def process_text(
-    text: str, meta_entities: List[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    text: str, meta_entities: list[dict[str, Any]] = None
+) -> dict[str, Any]:
     """
     Process a single text string:
     1. Find BERT NER entities
@@ -105,7 +105,7 @@ def process_text(
     return {"tokens": tokens, "ner_tags": ner_tags}
 
 
-def process_csv() -> List[Dict[str, Any]]:
+def process_csv() -> list[dict[str, Any]]:
     logger.info(f"Reading {settings.INPUT_CSV}...")
     data = []
 
@@ -148,7 +148,7 @@ def process_csv() -> List[Dict[str, Any]]:
     return data
 
 
-def process_json() -> List[Dict[str, Any]]:
+def process_json() -> list[dict[str, Any]]:
     logger.info(f"Reading {settings.INPUT_JSON}...")
     data = []
 
@@ -188,7 +188,7 @@ def process_json() -> List[Dict[str, Any]]:
     return data
 
 
-def save_jsonl(data: List[Dict[str, Any]], filename: Any):
+def save_jsonl(data: list[dict[str, Any]], filename: Any):
     logger.info(f"Saving {len(data)} examples to {filename}...")
     with open(filename, "w", encoding="utf-8") as f:
         for item in data:
@@ -202,18 +202,35 @@ def main():
 
     all_data = csv_data + json_data
 
-    # 2. Shuffle
-    random.seed(42)
-    random.shuffle(all_data)
+    # 2. Deterministic Split
+    train_data = []
+    dev_data = []
+    test_data = []
 
-    # 3. Split
-    split_idx = int(len(all_data) * settings.SPLIT_RATIO)
-    train_data = all_data[:split_idx]
-    dev_data = all_data[split_idx:]
+    for item in all_data:
+        # Use the text content for hashing to ensure stability
+        # We reconstruct text from tokens for hashing purposes
+        # (or we could use the original text if we had kept it, but tokens are fine)
+        text_content = " ".join(item["tokens"])
+
+        # Adler32 is fast and sufficient for this purpose
+        h = zlib.adler32(text_content.encode("utf-8")) % 100
+
+        if h < 80:
+            train_data.append(item)
+        elif h < 90:
+            dev_data.append(item)
+        else:
+            test_data.append(item)
+
+    logger.info(
+        f"Split results: Train={len(train_data)}, Dev={len(dev_data)}, Test={len(test_data)}"
+    )
 
     # 4. Save
     save_jsonl(train_data, settings.OUTPUT_TRAIN)
     save_jsonl(dev_data, settings.OUTPUT_DEV)
+    save_jsonl(test_data, settings.OUTPUT_TEST)
 
     # 5. Show a sample
     logger.info("Sample Output:")

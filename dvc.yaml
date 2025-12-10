@@ -1,0 +1,35 @@
+stages:
+  load_data:
+    cmd: uv run python src/sportsinjuryner/train/00_load_injuries_data.py
+    frozen: true
+    deps:
+    - src/sportsinjuryner/train/00_load_injuries_data.py
+    outs:
+    - src/data/injuries_espn.csv
+    - src/data/injuries_nfl.csv
+
+  generate_data:
+    cmd: uv run python src/sportsinjuryner/train/01_convert_csv_to_ner_data.py
+    deps:
+    - src/data/injuries_espn.csv
+    - src/sportsinjuryner/train/01_convert_csv_to_ner_data.py
+    outs:
+    - src/data/dev.jsonl
+    - src/data/train.jsonl
+
+  validate_data:
+    cmd: uv run python src/sportsinjuryner/train/02_validate_ner_data.py
+    frozen: true
+    deps:
+    - src/data/dev.jsonl
+    - src/sportsinjuryner/train/02_validate_ner_data.py
+    outs:
+    - src/data/gold_standard.jsonl
+
+  train_model:
+    cmd: uv run python src/sportsinjuryner/train/03_train_injury_ner.py
+    deps:
+    - src/data/train.jsonl
+    - src/sportsinjuryner/train/03_train_injury_ner.py
+    outs:
+    - sports-injury-ner-model

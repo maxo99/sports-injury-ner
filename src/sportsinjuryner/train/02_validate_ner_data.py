@@ -1,7 +1,8 @@
 import json
 from typing import Any
 
-from config import settings, setup_logging
+from sportsinjuryner.config import settings, setup_logging
+from train.constants import REPORTER_BLACKLIST
 
 logger = setup_logging(__name__)
 
@@ -40,6 +41,45 @@ def print_example(tokens: list[str], tags: list[str]):
     for i, (token, tag) in enumerate(zip(tokens, tags)):
         print(f"{i:<3} {token:<20} {tag:<15}")
     print("=" * 50)
+
+
+def apply_reporter_filter(tokens: list[str], tags: list[str]) -> list[str]:
+    """
+    Heuristic: If the text after the last comma contains a reporter name,
+    set tags for that segment to 'O'.
+    """
+    # Find last comma index
+    last_comma_idx = -1
+    for i in range(len(tokens) - 1, -1, -1):
+        if tokens[i] == ",":
+            last_comma_idx = i
+            break
+
+    if last_comma_idx != -1 and last_comma_idx < len(tokens) - 1:
+        # Reconstruct text after comma
+        suffix_tokens = tokens[last_comma_idx + 1 :]
+        suffix_text = ""
+        for t in suffix_tokens:
+            if t.startswith("##"):
+                suffix_text += t[2:]
+            else:
+                suffix_text += " " + t
+        suffix_text = suffix_text.strip().lower()
+
+        # Check against blacklist
+        found_reporter = False
+        for reporter in REPORTER_BLACKLIST:
+            if reporter in suffix_text:
+                found_reporter = True
+                break
+
+        if found_reporter:
+            # Zero out tags after comma
+            for i in range(last_comma_idx + 1, len(tags)):
+                tags[i] = "O"
+            print(f"  [Auto-Filter] Cleared tags after comma due to reporter match.")
+
+    return tags
 
 
 def validate_example(example: dict[str, Any]) -> dict[str, Any] | str | None:
@@ -159,6 +199,12 @@ def main():
 
     for i, example in enumerate(to_review):
         print(f"\nReviewing example {i + 1}/{len(to_review)}")
+
+        # Apply heuristic filter
+        example["ner_tags"] = apply_reporter_filter(
+            example["tokens"], example["ner_tags"]
+        )
+
         result = validate_example(example)
 
         if result == "QUIT":
