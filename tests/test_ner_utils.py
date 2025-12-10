@@ -1,6 +1,10 @@
 import pytest
 from transformers import AutoTokenizer
-from train.ner_utils import find_keyword_offsets, align_tokens_and_labels
+
+from sportsinjuryner.train.ner_utils import (
+    align_tokens_and_labels,
+    find_keyword_offsets,
+)
 
 
 @pytest.fixture

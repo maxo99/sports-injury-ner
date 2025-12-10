@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from sportsinjuryner.config import setup_logging
+from sportsinjuryner.train.constants import REPORTER_BLACKLIST
 
 logger = setup_logging(__name__)
 
@@ -189,5 +190,44 @@ def tag_keywords(
         tags[sorted_indices[0]] = f"B-{tag_type}"
         for idx in sorted_indices[1:]:
             tags[idx] = f"I-{tag_type}"
+
+    return tags
+
+
+def apply_reporter_filter(tokens: list[str], tags: list[str]) -> list[str]:
+    """
+    Heuristic: If the text after the last comma contains a reporter name,
+    set tags for that segment to 'O'.
+    """
+    # Find last comma index
+    last_comma_idx = -1
+    for i in range(len(tokens) - 1, -1, -1):
+        if tokens[i] == ",":
+            last_comma_idx = i
+            break
+
+    if last_comma_idx != -1 and last_comma_idx < len(tokens) - 1:
+        # Reconstruct text after comma
+        suffix_tokens = tokens[last_comma_idx + 1 :]
+        suffix_text = ""
+        for t in suffix_tokens:
+            if t.startswith("##"):
+                suffix_text += t[2:]
+            else:
+                suffix_text += " " + t
+        suffix_text = suffix_text.strip().lower()
+
+        # Check against blacklist
+        found_reporter = False
+        for reporter in REPORTER_BLACKLIST:
+            if reporter in suffix_text:
+                found_reporter = True
+                break
+
+        if found_reporter:
+            # Zero out tags after comma
+            for i in range(last_comma_idx + 1, len(tags)):
+                tags[i] = "O"
+            # print(f"  [Auto-Filter] Cleared tags after comma due to reporter match.")
 
     return tags

@@ -6,8 +6,15 @@ from typing import Any
 from transformers import AutoTokenizer, pipeline
 
 from sportsinjuryner.config import settings, setup_logging
-from train.constants import INJURY_KEYWORDS, ORG_BLACKLIST, STATUS_KEYWORDS
-from train.ner_utils import align_tokens_and_labels, find_keyword_offsets
+from sportsinjuryner.train.constants import (
+    INJURY_KEYWORDS,
+    ORG_BLACKLIST,
+    STATUS_KEYWORDS,
+)
+from sportsinjuryner.train.ner_utils import (
+    align_tokens_and_labels,
+    find_keyword_offsets,
+)
 
 logger = setup_logging(__name__)
 
@@ -15,7 +22,7 @@ logger = setup_logging(__name__)
 logger.info(f"Loading NER model ({settings.DATA_GEN_MODEL})...")
 ner_pipeline = pipeline(
     "ner", model=settings.DATA_GEN_MODEL, aggregation_strategy="simple"
-)  # type : ignore
+)  # type: ignore
 
 # Initialize Tokenizer (for alignment)
 logger.info(f"Loading Tokenizer ({settings.TRAIN_BASE_MODEL})...")
@@ -53,7 +60,8 @@ def get_bert_ner_entities(text: str) -> list[dict[str, Any]]:
 
 
 def process_text(
-    text: str, meta_entities: list[dict[str, Any]] = None
+    text: str,
+    meta_entities: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Process a single text string:

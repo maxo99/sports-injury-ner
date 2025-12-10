@@ -1,10 +1,3 @@
-import sys
-from pathlib import Path
-
-# Add src to path
-BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.append(str(BASE_DIR / "src"))
-
 from huggingface_hub import HfApi
 
 from sportsinjuryner.config import settings
@@ -17,7 +10,7 @@ def main():
         print("Error: HF_API_KEY not found in settings.")
         return
 
-    readme_path = BASE_DIR / "README.md"
+    readme_path = settings.BASE_DIR / "README.md"
     if not readme_path.exists():
         print(f"Error: README.md not found at {readme_path}")
         return

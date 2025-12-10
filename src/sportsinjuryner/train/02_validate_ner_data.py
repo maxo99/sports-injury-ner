@@ -1,8 +1,10 @@
+import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 from sportsinjuryner.config import settings, setup_logging
-from train.constants import REPORTER_BLACKLIST
+from sportsinjuryner.train.ner_utils import apply_reporter_filter
 
 logger = setup_logging(__name__)
 
@@ -41,45 +43,6 @@ def print_example(tokens: list[str], tags: list[str]):
     for i, (token, tag) in enumerate(zip(tokens, tags)):
         print(f"{i:<3} {token:<20} {tag:<15}")
     print("=" * 50)
-
-
-def apply_reporter_filter(tokens: list[str], tags: list[str]) -> list[str]:
-    """
-    Heuristic: If the text after the last comma contains a reporter name,
-    set tags for that segment to 'O'.
-    """
-    # Find last comma index
-    last_comma_idx = -1
-    for i in range(len(tokens) - 1, -1, -1):
-        if tokens[i] == ",":
-            last_comma_idx = i
-            break
-
-    if last_comma_idx != -1 and last_comma_idx < len(tokens) - 1:
-        # Reconstruct text after comma
-        suffix_tokens = tokens[last_comma_idx + 1 :]
-        suffix_text = ""
-        for t in suffix_tokens:
-            if t.startswith("##"):
-                suffix_text += t[2:]
-            else:
-                suffix_text += " " + t
-        suffix_text = suffix_text.strip().lower()
-
-        # Check against blacklist
-        found_reporter = False
-        for reporter in REPORTER_BLACKLIST:
-            if reporter in suffix_text:
-                found_reporter = True
-                break
-
-        if found_reporter:
-            # Zero out tags after comma
-            for i in range(last_comma_idx + 1, len(tags)):
-                tags[i] = "O"
-            print(f"  [Auto-Filter] Cleared tags after comma due to reporter match.")
-
-    return tags
 
 
 def validate_example(example: dict[str, Any]) -> dict[str, Any] | str | None:
@@ -176,12 +139,22 @@ def validate_example(example: dict[str, Any]) -> dict[str, Any] | str | None:
 
 
 def main():
-    logger.info(f"Loading {settings.OUTPUT_DEV}...")
-    data = load_data(settings.OUTPUT_DEV)
+    parser = argparse.ArgumentParser(description="Validate NER Data")
+    parser.add_argument(
+        "--input-file",
+        type=str,
+        default=str(settings.OUTPUT_DEV),
+        help="Path to the input file to validate (default: dev.jsonl)",
+    )
+    args = parser.parse_args()
+
+    input_path = Path(args.input_file)
+    logger.info(f"Loading {input_path}...")
+    data = load_data(input_path)
 
     if not data:
         logger.error(
-            f"No data found in {settings.OUTPUT_DEV}. Run convert_csv_to_ner_data.py first."
+            f"No data found in {input_path}. Run convert_csv_to_ner_data.py or active_learning.py first."
         )
         return
 
@@ -200,6 +173,12 @@ def main():
     for i, example in enumerate(to_review):
         print(f"\nReviewing example {i + 1}/{len(to_review)}")
 
+        # Show active learning score if available
+        if "_al_score" in example:
+            print(
+                f"Active Learning Score: {example['_al_score']:.2f} (Conf: {example.get('_al_metrics', {}).get('confidence', 0):.2f})"
+            )
+
         # Apply heuristic filter
         example["ner_tags"] = apply_reporter_filter(
             example["tokens"], example["ner_tags"]
@@ -210,6 +189,16 @@ def main():
         if result == "QUIT":
             break
         elif result:
+            # Clean up temporary AL fields before saving to gold
+            if "_al_score" in result:
+                del result["_al_score"]
+            if "_al_metrics" in result:
+                del result["_al_metrics"]
+            if "active_learning_score" in result:
+                del result["active_learning_score"]
+            if "meta" in result and "confidence" in result["meta"]:
+                del result["meta"]  # Clean up meta if it was just for AL
+
             gold_data.append(result)
             # Auto-save after each valid entry
             save_data(gold_data, settings.GOLD_STANDARD)

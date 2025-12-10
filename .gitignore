@@ -9,12 +9,20 @@ wheels/
 # Virtual environments
 .venv
 .env
-data/
-workspaces/
-/sports-injury-ner-model
 
-!*.dvc
-mlruns
-mlflow.db
+# Data (DVC tracked)
 src/data/
+!src/data/.gitignore
+
+# Model Artifacts
+/sports-injury-ner-model
+/mlruns
+mlflow.db
+
+# Reports
 reports/
+!reports/.gitignore
+
+# IDE
+.vscode/
+.idea/

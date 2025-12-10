@@ -1,31 +1,18 @@
-import asyncio
-import importlib.util
-import sys
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
-from sportsinjuryner.loaders.feedsreader import FeedData, collect_feeddatas
-
-# Dynamic import for module starting with number
-file_path = Path(__file__).parent.parent / "src" / "train" / "00_load_injuries_data.py"
-spec = importlib.util.spec_from_file_location("load_injuries_data", file_path)
-load_injuries_data = importlib.util.module_from_spec(spec)
-sys.modules["load_injuries_data"] = load_injuries_data
-spec.loader.exec_module(load_injuries_data)
-get_injuries_espn = load_injuries_data.get_injuries_espn
+from sportsinjuryner.loaders.feedsreader import (
+    FeedData,
+    collect_feeddatas,
+    get_injuries_espn,
+)
 
 
-# Helper to run async tests if pytest-asyncio is not set up
-def run_async(coro):
-    return asyncio.run(coro)
-
-
+@pytest.mark.asyncio
 class TestDataSources:
-    def test_collect_feeddatas_all(self):
+    async def test_collect_feeddatas_all(self):
         """Test collecting feeds for all sports."""
-        feeds = run_async(collect_feeddatas("all"))
+        feeds = await collect_feeddatas("all")
         assert isinstance(feeds, list)
         assert len(feeds) > 0
         assert all(isinstance(f, FeedData) for f in feeds)
@@ -36,21 +23,21 @@ class TestDataSources:
         assert any("NBA" in fid for fid in feed_ids)
         # MLB/NHL might be empty in off-season, but we verified they have entries in the script
 
-    def test_collect_feeddatas_specific_sport(self):
+    async def test_collect_feeddatas_specific_sport(self):
         """Test collecting feeds for a specific sport."""
         # NFL
-        nfl_feeds = run_async(collect_feeddatas("NFL"))
+        nfl_feeds = await collect_feeddatas("NFL")
         assert len(nfl_feeds) > 0
         assert all("NFL" in f.feed_id for f in nfl_feeds)
 
         # NBA
-        nba_feeds = run_async(collect_feeddatas("NBA"))
+        nba_feeds = await collect_feeddatas("NBA")
         assert len(nba_feeds) > 0
         assert all("NBA" in f.feed_id for f in nba_feeds)
 
-    def test_collect_feeddatas_invalid_sport(self):
+    async def test_collect_feeddatas_invalid_sport(self):
         """Test collecting feeds for an invalid sport."""
-        feeds = run_async(collect_feeddatas("INVALID_SPORT"))
+        feeds = await collect_feeddatas("INVALID_SPORT")
         assert isinstance(feeds, list)
         assert len(feeds) == 0
 

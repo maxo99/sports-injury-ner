@@ -1,13 +1,16 @@
 import logging
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
+import git
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # Project Paths
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent
+    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    ROOT_DIR: str = str(git.Repo(".", search_parent_directories=True).working_tree_dir)
     SRC_DIR: Path = BASE_DIR / "src"
     DATA_DIR: Path = SRC_DIR / "data"
 
@@ -61,3 +64,7 @@ def setup_logging(name: str | None = None) -> logging.Logger:
         logger.setLevel(level)
 
     return logger
+
+
+def get_utc_now():
+    return datetime.now(UTC)

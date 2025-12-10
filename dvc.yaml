@@ -30,6 +30,7 @@ stages:
     cmd: uv run python src/sportsinjuryner/train/03_train_injury_ner.py
     deps:
     - src/data/train.jsonl
+    - src/data/gold_standard.jsonl
     - src/sportsinjuryner/train/03_train_injury_ner.py
     outs:
     - sports-injury-ner-model

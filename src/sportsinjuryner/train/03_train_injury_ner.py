@@ -14,6 +14,7 @@ from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
     DataCollatorForTokenClassification,
+    EarlyStoppingCallback,
     Trainer,
     TrainingArguments,
 )
@@ -144,32 +145,72 @@ def main():
         )
 
     # ============================================================================
-    # 2. LOAD DATASET
+    # 2. LOAD & MERGE DATASET
     # ============================================================================
-    # Determine validation file
-    if settings.GOLD_STANDARD.exists():
-        logger.info(f"Using gold standard for validation: {settings.GOLD_STANDARD}")
-        validation_file = str(settings.GOLD_STANDARD)
-    else:
-        logger.warning(
-            f"Gold standard not found at {settings.GOLD_STANDARD}. Falling back to {settings.OUTPUT_DEV}"
+    # We want to train on Silver Data + Gold Data (Active Learning).
+    # But we must ensure we don't have duplicates (Silver vs Gold for same text).
+
+    silver_train_path = settings.OUTPUT_TRAIN
+    gold_path = settings.GOLD_STANDARD
+
+    # Load Silver Data
+    if not silver_train_path.exists():
+        raise FileNotFoundError(f"Training data not found at {silver_train_path}")
+
+    logger.info(f"Loading Silver training data from {silver_train_path}...")
+    silver_dataset = load_dataset(
+        "json", data_files=str(silver_train_path), split="train"
+    )
+
+    # Load Gold Data (if exists)
+    gold_examples = []
+    if gold_path.exists():
+        logger.info(f"Loading Gold data from {gold_path}...")
+        gold_dataset = load_dataset("json", data_files=str(gold_path), split="train")
+        gold_examples = list(gold_dataset)
+        logger.info(f"Found {len(gold_examples)} gold examples.")
+
+    # Merge Logic
+    if gold_examples:
+        # Create a set of Gold texts for fast lookup
+        # We use " ".join(tokens) as the unique key
+        gold_texts = {" ".join(ex["tokens"]) for ex in gold_examples}
+
+        # Filter Silver: Keep only if text is NOT in Gold
+        logger.info("Filtering Silver data to remove conflicts with Gold...")
+        original_len = len(silver_dataset)
+        filtered_silver = silver_dataset.filter(
+            lambda x: " ".join(x["tokens"]) not in gold_texts
         )
+        logger.info(
+            f"Removed {original_len - len(filtered_silver)} Silver examples that are now in Gold."
+        )
+
+        # Combine
+        from datasets import concatenate_datasets
+
+        combined_train = concatenate_datasets([filtered_silver, gold_dataset])
+        combined_train = combined_train.shuffle(seed=42)  # Shuffle to mix Gold/Silver
+        logger.info(
+            f"Final Training Set: {len(combined_train)} examples ({len(filtered_silver)} Silver + {len(gold_dataset)} Gold)"
+        )
+
+        train_dataset = combined_train
+
+        # Since Gold is now in Train, we MUST NOT use it for Validation (leakage).
+        # Fallback to Dev or Test for validation.
+        validation_file = str(settings.OUTPUT_DEV)
+        logger.info(f"Using {validation_file} for validation (since Gold is in Train).")
+
+    else:
+        train_dataset = silver_dataset
         validation_file = str(settings.OUTPUT_DEV)
 
-    data_files = {
-        "train": str(settings.OUTPUT_TRAIN),
-        "validation": validation_file,
-    }
+    # Load Validation
+    logger.info(f"Loading Validation data from {validation_file}...")
+    eval_dataset = load_dataset("json", data_files=validation_file, split="train")
 
-    # Check if files exist
-    if not os.path.exists(data_files["train"]):
-        raise FileNotFoundError(
-            f"Training data not found at {data_files['train']}. Run convert_csv_to_ner_data.py first."
-        )
-
-    # Load JSONL data
-    dataset = load_dataset("json", data_files=data_files)
-    logger.info(f"Loaded dataset: {dataset}")
+    dataset = {"train": train_dataset, "validation": eval_dataset}
 
     # ============================================================================
     # 3. TOKENIZATION & ALIGNMENT
@@ -177,9 +218,18 @@ def main():
     logger.info(f"Loading tokenizer for {settings.TRAIN_BASE_MODEL}...")
     tokenizer = AutoTokenizer.from_pretrained(settings.TRAIN_BASE_MODEL)
 
-    tokenized_datasets = dataset.map(
-        lambda x: tokenize_and_align_labels(x, tokenizer), batched=True
-    )
+    # Helper to map over the dictionary or dataset
+    def tokenize_dataset(ds):
+        return ds.map(
+            lambda x: tokenize_and_align_labels(x, tokenizer),
+            batched=True,
+            remove_columns=ds.column_names,  # Remove original columns to save space/avoid issues
+        )
+
+    tokenized_train = tokenize_dataset(dataset["train"])
+    tokenized_val = tokenize_dataset(dataset["validation"])
+
+    tokenized_datasets = {"train": tokenized_train, "validation": tokenized_val}
 
     # ============================================================================
     # 4. TRAINING SETUP
@@ -195,17 +245,21 @@ def main():
     args = TrainingArguments(
         output_dir="sports-injury-ner-model",
         eval_strategy="epoch",
+        save_strategy="epoch",
         learning_rate=2e-5,
         per_device_train_batch_size=16,
-        num_train_epochs=3,
+        num_train_epochs=10,
         weight_decay=0.01,
         push_to_hub=True,
         hub_model_id=settings.HF_REPO_NAME,
         hub_private_repo=False,
         logging_steps=10,
-        report_to="mlflow",  # Enable MLflow tracking
+        report_to=["mlflow", "tensorboard"],  # Enable both MLflow and TensorBoard
         run_name="sports-injury-ner-v1",  # Name for the run in MLflow
-    ) # type: ignore
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        save_total_limit=2,
+    )  # type: ignore
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
 
@@ -217,6 +271,7 @@ def main():
         data_collator=data_collator,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
 
     # ============================================================================
