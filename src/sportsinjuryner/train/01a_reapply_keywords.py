@@ -1,40 +1,21 @@
-import json
-from pathlib import Path
 
-from train.constants import (
+from sportsinjuryner.config import load_jsonl, save_jsonl, settings
+from sportsinjuryner.train.constants import (
     INJURY_KEYWORDS,
+    INJURY_VERBS,
     ORG_BLACKLIST,
     REPORTER_BLACKLIST,
     STATUS_KEYWORDS,
+    STATUS_PREFIXES,
     TEAM_WHITELIST,
 )
-from train.ner_utils import tag_keywords
-
-# Configuration
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+from sportsinjuryner.train.ner_utils import tag_keywords
 
 FILES_TO_UPDATE = [
-    DATA_DIR / "train.jsonl",
-    DATA_DIR / "dev.jsonl",
-    # DATA_DIR / "gold_standard.jsonl", # Uncomment if you want to update gold standard too
+    settings.OUTPUT_TRAIN,
+    settings.OUTPUT_DEV,
+    # settings.GOLD_STANDARD, # Uncomment if you want to update gold standard too
 ]
-
-
-def load_jsonl(filename):
-    data = []
-    if Path(filename).exists():
-        with open(filename, encoding="utf-8") as f:
-            for line in f:
-                data.append(json.loads(line))
-    return data
-
-
-def save_jsonl(data, filename):
-    print(f"Saving {len(data)} examples to {filename}...")
-    with open(filename, "w", encoding="utf-8") as f:
-        for item in data:
-            f.write(json.dumps(item) + "\n")
 
 
 def reapply_keywords(data):
@@ -64,11 +45,13 @@ def reapply_keywords(data):
                 if any(token_word in bl_item.split() for bl_item in REPORTER_BLACKLIST):
                     ner_tags[i] = "O"
 
-        # 2. Re-apply Status Keywords
+        # 2. Re-apply Status Keywords & Prefixes
         ner_tags = tag_keywords(tokens, ner_tags, STATUS_KEYWORDS, tag_type="STATUS")
+        ner_tags = tag_keywords(tokens, ner_tags, STATUS_PREFIXES, tag_type="STATUS")
 
-        # 3. Re-apply Injury Keywords
+        # 3. Re-apply Injury Keywords & Verbs
         ner_tags = tag_keywords(tokens, ner_tags, INJURY_KEYWORDS, tag_type="INJURY")
+        ner_tags = tag_keywords(tokens, ner_tags, INJURY_VERBS, tag_type="INJURY")
 
         # 4. Re-apply Team Whitelist
         ner_tags = tag_keywords(tokens, ner_tags, TEAM_WHITELIST, tag_type="TEAM")

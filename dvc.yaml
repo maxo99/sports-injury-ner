@@ -34,3 +34,25 @@ stages:
     - src/sportsinjuryner/train/03_train_injury_ner.py
     outs:
     - sports-injury-ner-model
+
+  analyze_errors:
+    cmd: uv run python src/sportsinjuryner/train/05_error_analysis.py
+    deps:
+    - sports-injury-ner-model
+    - src/data/test.jsonl
+    - src/data/dev.jsonl
+    - src/sportsinjuryner/train/05_error_analysis.py
+    outs:
+    - reports/error_analysis.csv
+    - reports/test_metrics.json
+
+  active_learning:
+    cmd: uv run python src/sportsinjuryner/train/04_active_learning.py
+    frozen: true
+    deps:
+    - sports-injury-ner-model
+    - src/data/train.jsonl
+    - src/data/dev.jsonl
+    - src/sportsinjuryner/train/04_active_learning.py
+    outs:
+    - src/data/active_learning_candidates.jsonl

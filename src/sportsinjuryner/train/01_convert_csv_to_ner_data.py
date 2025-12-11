@@ -8,8 +8,10 @@ from transformers import AutoTokenizer, pipeline
 from sportsinjuryner.config import settings, setup_logging
 from sportsinjuryner.train.constants import (
     INJURY_KEYWORDS,
+    INJURY_VERBS,
     ORG_BLACKLIST,
     STATUS_KEYWORDS,
+    STATUS_PREFIXES,
 )
 from sportsinjuryner.train.ner_utils import (
     align_tokens_and_labels,
@@ -79,14 +81,23 @@ def process_text(
 
     # 2. Keywords
     injury_entities = find_keyword_offsets(text, INJURY_KEYWORDS, "INJURY")
+    injury_verb_entities = find_keyword_offsets(text, INJURY_VERBS, "INJURY")
     status_entities = find_keyword_offsets(text, STATUS_KEYWORDS, "STATUS")
+    status_prefix_entities = find_keyword_offsets(text, STATUS_PREFIXES, "STATUS")
 
     # 3. Combine all entities
     # Priority: Metadata > Keywords > BERT NER
     # We want to keep Metadata entities (Ground Truth) and Keywords (Specific Domain)
     # over generic BERT NER if they overlap.
 
-    all_entities = meta_entities + injury_entities + status_entities + bert_entities
+    all_entities = (
+        meta_entities
+        + injury_entities
+        + injury_verb_entities
+        + status_entities
+        + status_prefix_entities
+        + bert_entities
+    )
 
     # 4. Resolve Overlaps
     # We resolve overlaps by iterating through the prioritized list (Metadata > Keywords > BERT).

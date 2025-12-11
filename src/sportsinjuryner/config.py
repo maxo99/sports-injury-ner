@@ -1,9 +1,12 @@
+import json
 import logging
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import git
+import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +16,7 @@ class Settings(BaseSettings):
     ROOT_DIR: str = str(git.Repo(".", search_parent_directories=True).working_tree_dir)
     SRC_DIR: Path = BASE_DIR / "src"
     DATA_DIR: Path = SRC_DIR / "data"
+    CONFIG_DIR: Path = BASE_DIR / "config"
 
     # Data Files
     INPUT_CSV: Path = DATA_DIR / "injuries_espn.csv"
@@ -21,6 +25,7 @@ class Settings(BaseSettings):
     OUTPUT_DEV: Path = DATA_DIR / "dev.jsonl"
     OUTPUT_TEST: Path = DATA_DIR / "test.jsonl"
     GOLD_STANDARD: Path = DATA_DIR / "gold_standard.jsonl"
+    KEYWORDS_FILE: Path = CONFIG_DIR / "keywords.yaml"
 
     # Model Config
     # Model used to generate initial "silver" labels (must be a pre-trained NER model)
@@ -43,6 +48,19 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def load_keywords() -> dict[str, Any]:
+    """Loads keywords from the YAML configuration file."""
+    if not settings.KEYWORDS_FILE.exists():
+        # Fallback or raise error? For now, let's log and return empty
+        # But since we don't have the logger setup inside this function easily without circular deps if we use setup_logging
+        # We'll just raise or return empty.
+        # Given this is critical config, raising is better, but let's stick to the previous behavior of raising.
+        raise FileNotFoundError(f"Config file not found at {settings.KEYWORDS_FILE}")
+
+    with open(settings.KEYWORDS_FILE, encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
 def setup_logging(name: str | None = None) -> logging.Logger:
@@ -68,3 +86,21 @@ def setup_logging(name: str | None = None) -> logging.Logger:
 
 def get_utc_now():
     return datetime.now(UTC)
+
+
+
+def load_jsonl(filename):
+    data = []
+    if Path(filename).exists():
+        with open(filename, encoding="utf-8") as f:
+            for line in f:
+                data.append(json.loads(line))
+    return data
+
+
+def save_jsonl(data, filename):
+    print(f"Saving {len(data)} examples to {filename}...")
+    with open(filename, "w", encoding="utf-8") as f:
+        for item in data:
+            f.write(json.dumps(item) + "\n")
+

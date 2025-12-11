@@ -9,38 +9,38 @@ stages:
       size: 65365
     - path: src/sportsinjuryner/train/01_convert_csv_to_ner_data.py
       hash: md5
-      md5: bb2810c154ae099cd55b1f90553f0862
-      size: 7852
+      md5: 494bce48d61712adb7e74120ff2566da
+      size: 8156
     outs:
     - path: src/data/dev.jsonl
       hash: md5
-      md5: f66ab3dde5f30172f14950eb122c837e
-      size: 17245
+      md5: 260cf71a05b5b8a56702181ea6dc1268
+      size: 17308
     - path: src/data/train.jsonl
       hash: md5
-      md5: 03eb0418e7e464208b683eb788a643ea
-      size: 181808
+      md5: ee23ef4b9a0a66dff3aa425b95184e92
+      size: 182725
   train_model:
     cmd: uv run python src/sportsinjuryner/train/03_train_injury_ner.py
     deps:
     - path: src/data/gold_standard.jsonl
       hash: md5
-      md5: aad9edd780735e538ab0c5a6d26d8f53
-      size: 26641
+      md5: b13e6ab28f8cf74a5b814774048511b1
+      size: 34287
     - path: src/data/train.jsonl
       hash: md5
-      md5: 03eb0418e7e464208b683eb788a643ea
-      size: 181808
+      md5: ee23ef4b9a0a66dff3aa425b95184e92
+      size: 182725
     - path: src/sportsinjuryner/train/03_train_injury_ner.py
       hash: md5
-      md5: 29729ee3ded91e60c9b3b35345449ac2
-      size: 12405
+      md5: 7b9992b8e16b5788d8a2c3769577b703
+      size: 12388
     outs:
     - path: sports-injury-ner-model
       hash: md5
-      md5: 42ebd3bea339c367286f9f63e8fea662.dir
-      size: 2609141773
-      nfiles: 29
+      md5: 739d36f7605e02b835cee862cbaca125.dir
+      size: 2609151044
+      nfiles: 30
   load_data:
     cmd: uv run python src/sportsinjuryner/train/00_load_injuries_data.py
     deps:
@@ -62,14 +62,14 @@ stages:
     deps:
     - path: src/data/dev.jsonl
       hash: md5
-      md5: f66ab3dde5f30172f14950eb122c837e
-      size: 17245
+      md5: 260cf71a05b5b8a56702181ea6dc1268
+      size: 17308
     - path: src/sportsinjuryner/train/02_validate_ner_data.py
       hash: md5
-      md5: add738fdafbb28e24aec45a5c9e050b4
-      size: 7228
+      md5: ab19de9e18e1cff766cbb6d89cbb5e2f
+      size: 7300
     outs:
     - path: src/data/gold_standard.jsonl
       hash: md5
-      md5: aad9edd780735e538ab0c5a6d26d8f53
-      size: 26641
+      md5: b13e6ab28f8cf74a5b814774048511b1
+      size: 34287

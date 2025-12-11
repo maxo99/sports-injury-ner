@@ -48,16 +48,6 @@ sportsinjuryner = { workspace = true }
 
 
 
-
-[project.scripts]
-00-load = "scripts:dvc_load"
-01-generate = "scripts:dvc_generate"
-01a-reapply = "scripts:dvc_reapply"
-02-validate = "scripts:dvc_validate"
-03-train = "scripts:dvc_train"
-pipeline = "scripts:dvc_repro"
-mlflow-ui = "scripts:mlflow_ui"
-
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
