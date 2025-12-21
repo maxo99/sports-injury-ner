@@ -68,5 +68,4 @@
 
 ## Next Steps
 
-- **Demo**: Build Streamlit app to showcase the high-performance model.
 - **Documentation**: Finalize README.

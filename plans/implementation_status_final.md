@@ -39,8 +39,8 @@ This final implementation plan consolidates all outstanding tasks from previous 
   - [x] **Analyze Predictions**: Run inference on `test` and `dev` sets.
   - [x] **Track Metrics**: Calculate Precision, Recall, and F1-score on the `gold_standard` set.
   - [x] **Inspect Errors**: Export false positives and false negatives to CSV for review.
-  - [ ] **Refine Keywords**: Update `config/keywords.yaml` based on analysis findings.
-    - [ ] **Implement Prefix Verbs**: Add matching of common prefixes for status' like 'placed on X', 'fractured Y', etc.
+  - [X] **Refine Keywords**: Update `config/keywords.yaml` based on analysis findings.
+    - [X] **Implement Prefix Verbs**: Add matching of common prefixes for status' like 'placed on X', 'fractured Y', etc.
 
 ## Priority 2: Production Readiness (In Progress)
 
@@ -53,7 +53,7 @@ This final implementation plan consolidates all outstanding tasks from previous 
 
 - [x] **Integration Tests**: Add tests for the full training pipeline and new scripts.
   - *Completed*: Added unit tests for `inference`, `active_learning`, and `data_sources`.
-- [ ] **Final Documentation**: Update `README.md` with final usage instructions for all new scripts.
+- [X] **Final Documentation**: Update `README.md` with final usage instructions for all new scripts.
 
 ## Priority 3: Future Optimizations
 
