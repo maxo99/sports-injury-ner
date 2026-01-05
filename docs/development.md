@@ -6,6 +6,11 @@ This project uses **DVC** to manage the machine learning pipeline.
 
 ### 1. Data Pipeline
 
+0. **Load Data** (`src/sportsinjuryner/train/00_load_injuries_data.py`)
+    * Fetches latest injury reports from ESPN and RSS feeds.
+    * Outputs `src/data/injuries_espn.csv` and `src/data/feed.json`.
+    * **Run**: `dvc repro load_data`
+
 1. **Generate Data** (`src/sportsinjuryner/train/01_convert_csv_to_ner_data.py`)
     * Combines CSV (`src/data/injuries_espn.csv`) and JSON (`src/data/feed.json`) data.
     * Uses `dslim/bert-large-NER` for initial Player/Team detection.
@@ -27,7 +32,14 @@ This project uses **DVC** to manage the machine learning pipeline.
 4. **Evaluation** (`src/sportsinjuryner/train/05_error_analysis.py`)
     * Runs inference on the held-out `test.jsonl`.
     * Exports detailed error analysis to `reports/error_analysis.csv`.
-    * **Run**: `uv run src/sportsinjuryner/train/05_error_analysis.py`
+    * **Run**: `dvc repro analyze_errors`
+
+### 2. Manual Inference
+
+To test the model interactively or on a specific string:
+
+* **Script**: `src/sportsinjuryner/inference/predict.py`
+* **Run**: `uv run python src/sportsinjuryner/inference/predict.py --interactive`
 
 ## Testing
 

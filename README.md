@@ -13,22 +13,23 @@ model-index:
   results: []
 ---
 
-[![uv](https://img.shields.io/badge/uv-python%20package%20manager-111827?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-deep%20learning-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Transformers](https://img.shields.io/badge/Transformers-huggingface-FF6F61?logo=transformers&logoColor=white)](https://huggingface.co/docs/transformers/index)
-[![DVC](https://img.shields.io/badge/DVC-data%20version%20control-4B4B4B?logo=dvc&logoColor=white)](https://dvc.org/)
-[![MLFlow](https://img.shields.io/badge/MLFlow-experiment%20tracking-13B9FD?logo=mlflow&logoColor=white)](https://mlflow.org/)
-[![scikit-learn](https://img.shields.io/badge/scikit--learn-metrics%20%26%20evaluation-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/stable/)
-[![TensorBoard](https://img.shields.io/badge/TensorBoard-training%20visualization-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org/tensorboard)
-[![seqeval](https://img.shields.io/badge/seqeval-NER%20metrics-1E88E5)](https://github.com/chakki-works/seqeval)
-
 # Sports Injury NER
 
+![GitHub tag version](https://img.shields.io/github/v/tag/maxo99/sports-injury-ner?label=version&logo=github&color=blue)
 <a href="https://huggingface.co/maxo99/sports-injury-ner">
   <img
     alt="Hugging Face Downloads"
     src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhuggingface.co%2Fapi%2Fmodels%2Fmaxo99%2Fsports-injury-ner%3Fexpand%255B%255D%3Ddownloads%26expand%255B%255D%3DdownloadsAllTime&query=%24.downloadsAllTime&label=maxo99%2Fsports-injury-ner&color=blue&logo=huggingface">
 </a>
+
+<!-- [![uv](https://img.shields.io/badge/uv-python%20package%20manager-111827?logo=uv&logoColor=white)](https://docs.astral.sh/uv/) -->
+<!-- [![Transformers](https://img.shields.io/badge/Transformers-huggingface-FF6F61?logo=transformers&logoColor=white)](https://huggingface.co/docs/transformers/index) -->
+[![PyTorch](https://img.shields.io/badge/PyTorch-deep%20learning-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![DVC](https://img.shields.io/badge/DVC-data%20version%20control-4B4B4B?logo=dvc&logoColor=white)](https://dvc.org/)
+[![MLFlow](https://img.shields.io/badge/MLFlow-experiment%20tracking-13B9FD?logo=mlflow&logoColor=white)](https://mlflow.org/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-metrics%20%26%20evaluation-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/stable/)
+[![TensorBoard](https://img.shields.io/badge/TensorBoard-training%20visualization-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org/tensorboard)
+[![seqeval](https://img.shields.io/badge/seqeval-NER%20metrics-1E88E5)](https://github.com/chakki-works/seqeval)
 
 This is a fine-tuned Named Entity Recognition (NER) model for extracting sports injury information from news text.
 
@@ -56,7 +57,7 @@ model = AutoModelForTokenClassification.from_pretrained(model_id)
 
 nlp = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
 
-text = "Packers QB Aaron Rodgers is questionable with a toe injury."
+text = "Packers QB Aaron Rodgers is questionable with a knee injury."
 results = nlp(text)
 print(results)
 ```
