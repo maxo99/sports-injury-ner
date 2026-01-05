@@ -1,6 +1,6 @@
 [project]
 name = "sports-injury-ner"
-version = "0.1.0"
+version = "1.0.0"
 description = "A Named Entity Recognition (NER) model for extracting sports injury information from news text, fine-tuned on Microsoft SportsBERT."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -81,6 +81,12 @@ disable = [
     "B905",  # 
 ]
 
+[tool.pyright]
+include = ["src", "tests"]
+exclude = [
+    "assets",
+]
+
 [tool.pylint.basic]
 good-names = [
     "i",
@@ -119,7 +125,7 @@ pythonpath = ["src"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
-version_variables = ["__init__.py:__version__"]
+version_variables = ["src/sportsinjuryner/__init__.py:__version__"]
 branch = "master"
 upload_to_pypi = false
 upload_to_release = true

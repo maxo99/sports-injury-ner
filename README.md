@@ -65,12 +65,12 @@ print(results)
 
 | Metric | Score |
 | :--- | :--- |
-| **F1 Score** | **94.98%** |
-| Precision | 95.41% |
-| Recall | 94.55% |
-| Accuracy | 97.06% |
+| **F1 Score** | **96.31%** |
+| Precision | 95.69% |
+| Recall | 96.94% |
+| Accuracy | 98.28% |
 
-*Evaluated: Dec 2025.*
+*Evaluated: 2025-12-21.*
 
 ## Training Data
 

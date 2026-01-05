@@ -66,6 +66,42 @@
   - Early stopping prevented overfitting, allowing the model to generalize much better to the test set.
   - **Conclusion**: The Active Learning loop is highly effective.
 
+### 4. Phase 6 Results: Baseline Comparison
+
+#### **Experiment A: Domain Adaptation Value**
+
+| Model | Precision | Recall | F1 Score | Accuracy |
+| :--- | :--- | :--- | :--- | :--- |
+| `bert-base-uncased` | 96.15% | 97.83% | 96.98% | 98.69% |
+| `microsoft/SportsBERT` | **97.37%** | 96.94% | **97.16%** | **98.77%** |
+
+**Analysis**:
+
+- Both models perform exceptionally well, likely due to the high quality of the "Gold" data added in Phase 5.
+- `SportsBERT` shows a slight edge in Precision (+1.2%) and F1 (+0.18%), confirming that domain pre-training offers a marginal but positive benefit for this specific task.
+- The high baseline performance (>96% F1) suggests that further hyperparameter tuning might yield diminishing returns, and focus should shift to **data expansion** (covering more diverse injury types) rather than model architecture.
+
+#### **Experiment B: Hyperparameter Sweep**
+
+| Run | LR | Batch | Precision | Recall | F1 Score | Accuracy |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Run 3 | 2e-5 | 16 | 96.92% | 96.07% | 96.49% | 98.04% |
+| Run 4 | 3e-5 | 16 | 95.67% | 96.51% | 96.09% | 98.04% |
+| Run 5 | 5e-5 | 32 | 95.69% | 96.94% | 96.31% | 98.28% |
+| **Baseline** | **5e-5** | **16** | **97.37%** | **96.94%** | **97.16%** | **98.77%** |
+
+**Analysis**:
+
+- **Baseline Remains Superior**: None of the new hyperparameter combinations outperformed the baseline configuration (LR=5e-5, Batch=16).
+- **Lower LR Degradation**: Reducing the learning rate to `2e-5` or `3e-5` slightly degraded performance, suggesting the model benefits from the more aggressive updates of `5e-5` given the small dataset size.
+- **Batch Size Impact**: Increasing batch size to 32 (Run 5) did not improve stability or performance compared to Batch 16.
+
+**Conclusion**:
+
+- We will stick with the **Baseline Configuration** (LR=5e-5, Batch=16) for production.
+- Further tuning of these specific parameters is unlikely to yield significant gains.
+- Future efforts should focus on **Data Expansion** (Active Learning Cycle 2) or **Synthetic Data Generation**.
+
 ## Next Steps
 
 - **Documentation**: Finalize README.

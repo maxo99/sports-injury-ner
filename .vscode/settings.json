@@ -11,6 +11,10 @@
         "**/__pycache__": true,
         "**/.pytest_cache": true,
         "**/*.egg-info": true,
+        ".python-version": true,
+        "LICENSE":true,
+        "uv.lock": true,
+        "dvc.lock": true,
         "**/*.venv": true,
         "**/*.ruff_cache": true,
         "htmlcov": true

@@ -19,6 +19,7 @@ from transformers import (
     TrainingArguments,
 )
 
+from sportsinjuryner import __version__
 from sportsinjuryner.config import settings, setup_logging
 
 logger = setup_logging(__name__)
@@ -129,12 +130,54 @@ def main():
         action="store_true",
         help="Run data loading and model init but skip actual training.",
     )
+    # Hyperparameters
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=5e-5,
+        help="Learning rate for the optimizer.",
+    )
+    parser.add_argument(
+        "--per_device_train_batch_size",
+        type=int,
+        default=16,
+        help="Batch size per device during training.",
+    )
+    parser.add_argument(
+        "--weight_decay",
+        type=float,
+        default=0.01,
+        help="Weight decay if we apply some.",
+    )
+    parser.add_argument(
+        "--num_train_epochs",
+        type=int,
+        default=10,
+        help="Total number of training epochs to perform.",
+    )
+    parser.add_argument(
+        "--warmup_ratio",
+        type=float,
+        default=0.0,
+        help="Linear warmup over warmup_ratio fraction of total steps.",
+    )
+    parser.add_argument(
+        "--base_model",
+        type=str,
+        default=None,
+        help="Base model to use. If None, uses settings.TRAIN_BASE_MODEL.",
+    )
+
     args_cli = parser.parse_args()
 
     # ============================================================================
     # 0. MLFLOW & HF SETUP
     # ============================================================================
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    
+    # Log version information
+    logger.info(f"Sports Injury NER Version: {__version__}")
+    mlflow.set_tag("version", __version__)
 
     if settings.HF_API_KEY:
         logger.info("Logging in to Hugging Face Hub...")
@@ -215,8 +258,9 @@ def main():
     # ============================================================================
     # 3. TOKENIZATION & ALIGNMENT
     # ============================================================================
-    logger.info(f"Loading tokenizer for {settings.TRAIN_BASE_MODEL}...")
-    tokenizer = AutoTokenizer.from_pretrained(settings.TRAIN_BASE_MODEL)
+    base_model_name = args_cli.base_model or settings.TRAIN_BASE_MODEL
+    logger.info(f"Loading tokenizer for {base_model_name}...")
+    tokenizer = AutoTokenizer.from_pretrained(base_model_name)
 
     # Helper to map over the dictionary or dataset
     def tokenize_dataset(ds):
@@ -236,7 +280,7 @@ def main():
     # ============================================================================
     logger.info("Initializing model...")
     model = AutoModelForTokenClassification.from_pretrained(
-        settings.TRAIN_BASE_MODEL,
+        base_model_name,
         num_labels=len(LABEL_LIST),
         id2label=id2label,
         label2id=label2id,
@@ -246,16 +290,17 @@ def main():
         output_dir="sports-injury-ner-model",
         eval_strategy="epoch",
         save_strategy="epoch",
-        learning_rate=2e-5,
-        per_device_train_batch_size=16,
-        num_train_epochs=10,
-        weight_decay=0.01,
+        learning_rate=args_cli.learning_rate,
+        per_device_train_batch_size=args_cli.per_device_train_batch_size,
+        num_train_epochs=args_cli.num_train_epochs,
+        weight_decay=args_cli.weight_decay,
+        warmup_ratio=args_cli.warmup_ratio,
         push_to_hub=True,
         hub_model_id=settings.HF_REPO_NAME,
         hub_private_repo=False,
         logging_steps=10,
         report_to=["mlflow", "tensorboard"],  # Enable both MLflow and TensorBoard
-        run_name="sports-injury-ner-v1",  # Name for the run in MLflow
+        run_name=f"sports-injury-ner-v{__version__}",  # Name for the run in MLflow with version
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         save_total_limit=2,

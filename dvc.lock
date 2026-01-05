@@ -14,14 +14,16 @@ stages:
     outs:
     - path: src/data/dev.jsonl
       hash: md5
-      md5: 260cf71a05b5b8a56702181ea6dc1268
-      size: 17308
+      md5: 4a77a1a3d8528f910170f3cf3365092d
+      size: 17329
     - path: src/data/train.jsonl
       hash: md5
-      md5: ee23ef4b9a0a66dff3aa425b95184e92
-      size: 182725
+      md5: 0c5a6488c07ac90c1073f41e05a3d062
+      size: 182900
   train_model:
-    cmd: uv run python src/sportsinjuryner/train/03_train_injury_ner.py
+    cmd: uv run python src/sportsinjuryner/train/03_train_injury_ner.py 
+      --learning_rate 5e-05 --per_device_train_batch_size 32 --weight_decay 0.01
+      --num_train_epochs 10 --warmup_ratio 0.0 --base_model microsoft/SportsBERT
     deps:
     - path: src/data/gold_standard.jsonl
       hash: md5
@@ -29,17 +31,25 @@ stages:
       size: 34287
     - path: src/data/train.jsonl
       hash: md5
-      md5: ee23ef4b9a0a66dff3aa425b95184e92
-      size: 182725
+      md5: 0c5a6488c07ac90c1073f41e05a3d062
+      size: 182900
     - path: src/sportsinjuryner/train/03_train_injury_ner.py
       hash: md5
-      md5: 7b9992b8e16b5788d8a2c3769577b703
-      size: 12388
+      md5: 15cbf67c42fbd5c8a4c5b37b37f2ca53
+      size: 13549
+    params:
+      params.yaml:
+        train.base_model: microsoft/SportsBERT
+        train.learning_rate: 5e-05
+        train.num_train_epochs: 10
+        train.per_device_train_batch_size: 32
+        train.warmup_ratio: 0.0
+        train.weight_decay: 0.01
     outs:
     - path: sports-injury-ner-model
       hash: md5
-      md5: 739d36f7605e02b835cee862cbaca125.dir
-      size: 2609151044
+      md5: 118ca777d1d3f405e939104d2e599691.dir
+      size: 2609151657
       nfiles: 30
   load_data:
     cmd: uv run python src/sportsinjuryner/train/00_load_injuries_data.py
@@ -62,8 +72,8 @@ stages:
     deps:
     - path: src/data/dev.jsonl
       hash: md5
-      md5: 260cf71a05b5b8a56702181ea6dc1268
-      size: 17308
+      md5: 4a77a1a3d8528f910170f3cf3365092d
+      size: 17329
     - path: src/sportsinjuryner/train/02_validate_ner_data.py
       hash: md5
       md5: ab19de9e18e1cff766cbb6d89cbb5e2f
@@ -73,3 +83,57 @@ stages:
       hash: md5
       md5: b13e6ab28f8cf74a5b814774048511b1
       size: 34287
+  analyze_errors:
+    cmd: uv run python src/sportsinjuryner/train/05_error_analysis.py
+    deps:
+    - path: sports-injury-ner-model
+      hash: md5
+      md5: 118ca777d1d3f405e939104d2e599691.dir
+      size: 2609151657
+      nfiles: 30
+    - path: src/data/dev.jsonl
+      hash: md5
+      md5: 4a77a1a3d8528f910170f3cf3365092d
+      size: 17329
+    - path: src/data/test.jsonl
+      hash: md5
+      md5: 84b00e89f7bba39887c4a787fc030b7c
+      size: 23739
+    - path: src/sportsinjuryner/train/05_error_analysis.py
+      hash: md5
+      md5: 3815afafc5cb27e444503a0f5141fc38
+      size: 7955
+    outs:
+    - path: reports/error_analysis.csv
+      hash: md5
+      md5: 0e8fee9b4e1e101d4d1d4b54295a8d64
+      size: 5745
+    - path: reports/test_metrics.json
+      hash: md5
+      md5: 70fdff83f765994340fadedcdaf6ff9b
+      size: 163
+  active_learning:
+    cmd: uv run python src/sportsinjuryner/train/04_active_learning.py
+    deps:
+    - path: sports-injury-ner-model
+      hash: md5
+      md5: e6d2ad6e8d5bba086c6eb34edf6906bb.dir
+      size: 2609151018
+      nfiles: 30
+    - path: src/data/dev.jsonl
+      hash: md5
+      md5: 4a77a1a3d8528f910170f3cf3365092d
+      size: 17329
+    - path: src/data/train.jsonl
+      hash: md5
+      md5: 0c5a6488c07ac90c1073f41e05a3d062
+      size: 182900
+    - path: src/sportsinjuryner/train/04_active_learning.py
+      hash: md5
+      md5: fc6b8402d0d551a5feb07f4c2f1786da
+      size: 4734
+    outs:
+    - path: src/data/active_learning_candidates.jsonl
+      hash: md5
+      md5: d41d8cd98f00b204e9800998ecf8427e
+      size: 0
