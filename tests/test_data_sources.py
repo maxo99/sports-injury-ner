@@ -8,8 +8,8 @@ from sportsinjuryner.loaders.feedsreader import (
 )
 
 
-@pytest.mark.asyncio
 class TestDataSources:
+    @pytest.mark.asyncio
     async def test_collect_feeddatas_all(self):
         """Test collecting feeds for all sports."""
         feeds = await collect_feeddatas("all")
@@ -23,6 +23,7 @@ class TestDataSources:
         assert any("NBA" in fid for fid in feed_ids)
         # MLB/NHL might be empty in off-season, but we verified they have entries in the script
 
+    @pytest.mark.asyncio
     async def test_collect_feeddatas_specific_sport(self):
         """Test collecting feeds for a specific sport."""
         # NFL
@@ -35,6 +36,7 @@ class TestDataSources:
         assert len(nba_feeds) > 0
         assert all("NBA" in f.feed_id for f in nba_feeds)
 
+    @pytest.mark.asyncio
     async def test_collect_feeddatas_invalid_sport(self):
         """Test collecting feeds for an invalid sport."""
         feeds = await collect_feeddatas("INVALID_SPORT")

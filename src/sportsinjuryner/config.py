@@ -100,6 +100,7 @@ def load_jsonl(filename):
 
 def save_jsonl(data, filename):
     print(f"Saving {len(data)} examples to {filename}...")
+    Path(filename).parent.mkdir(parents=True, exist_ok=True)
     with open(filename, "w", encoding="utf-8") as f:
         for item in data:
             f.write(json.dumps(item) + "\n")

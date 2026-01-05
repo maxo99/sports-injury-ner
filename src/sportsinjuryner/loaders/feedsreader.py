@@ -152,6 +152,7 @@ def get_injuries_espn():
         logger.debug(f"Sample data:\n{df.head()}")
 
     output_path = settings.INPUT_CSV
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
     logger.info(f"Saved to {output_path}")
     return df
@@ -166,6 +167,7 @@ def get_rss_feed():
         data_to_save = [item.model_dump() for item in feed_data]
 
         output_path = settings.INPUT_JSON
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w") as f:
             json.dump(data_to_save, f, indent=2, default=str)
 

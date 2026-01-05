@@ -232,7 +232,10 @@ def main():
         logger.info(f"  Accuracy:  {results['overall_accuracy']:.4f}")
 
         # Save metrics to JSON
-        metrics_path = Path(args.output_csv).parent / "test_metrics.json"
+        output_csv = Path(args.output_csv)
+        output_csv.parent.mkdir(parents=True, exist_ok=True)
+        
+        metrics_path = output_csv.parent / "test_metrics.json"
         with open(metrics_path, "w") as f:
             # Convert numpy types to float
             clean_results = {
@@ -247,8 +250,6 @@ def main():
 
     # 5. Save Errors
     if errors:
-        output_csv = Path(args.output_csv)
-        output_csv.parent.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame(errors)
         df.to_csv(output_csv, index=False)
         logger.info(f"Saved {len(errors)} error examples to {output_csv}")
