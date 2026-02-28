@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.1.1 (2026-02-28)
+
+### Bug Fixes
+
+- Lint and formatting
+  ([`9e024c4`](https://github.com/maxo99/sports-injury-ner/commit/9e024c4ed391a0f2ab18b6ae1dd9eb4d54c29c4c))
+
+### Documentation
+
+- Updating version badge and development documentation
+  ([`789d172`](https://github.com/maxo99/sports-injury-ner/commit/789d172038fd316fb519d3fdc389d82c4a624bbe))
+
+
 ## v0.1.0 (2026-01-05)
 
 ### Continuous Integration
